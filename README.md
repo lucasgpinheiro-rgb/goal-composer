@@ -2,6 +2,8 @@
 
 A Claude Code skill that interviews you ("grill me" style), explores the approaches with you, designs the chosen one, and writes a mandate for the built-in `/goal` command, then makes sure the proofs in it mean something.
 
+> **Claude Code only.** The skill writes for Claude Code's `/goal` command and runs Python and bash scripts on your machine. If you add it from the Claude directory it may also show up in claude.ai chat and Cowork, but it cannot do its job there.
+
 What you get per goal:
 
 - 2–3 alternative approaches with their trade-offs (proofs, scope, risk, turns), and a design of the chosen one validated section by section and saved as a file the executor reads first and is bound to: needing a rejected approach is a BLOCKED, not a silent switch. Depth is proportional: full for Change and Batch, method only for Audit, Research and Release review, skipped when you bring a spec;
@@ -70,6 +72,17 @@ Accept the work only on DONE. BROKEN means the proofs file was modified or a che
 
 The skill is slash-only (`disable-model-invocation: true`). Remove that line from `SKILL.md` if you want Claude to offer it on its own.
 
+## What it runs and writes
+
+Everything happens in your Claude Code session, under your own permission settings. The skill has no hooks, no MCP servers and no dependencies beyond the Python 3 standard library, and neither of its scripts makes network calls.
+
+- **Reads**: your project, to learn its layout and starting state (README, CLAUDE.md, the directory tree, `git status`, `git log`), plus its own reference files.
+- **Runs before the goal**: read-only checks during reconnaissance, such as the test suite when that is cheap; a red-team subagent (a fresh Claude instance, which counts against your usage like any subagent); `validate_goal.py`, which only reads the mandate and proofs files; and `recheck_goal.py --baseline`, which executes each command listed in `.claude/goals/<slug>-proofs.json` in bash from the project root. Those are the proof commands you agreed to during the interview.
+- **Runs after the goal**: nothing on its own. You run `recheck_goal.py`, which executes the same proof commands again. Read the proofs file before running it, as you would any script.
+- **Writes**: only under `.claude/goals/` in your project (mandate, design, proofs, optional verifier, checklist). The baseline stores its counter values in the proofs file.
+- **Network**: only what your own proof commands do, such as a test suite that calls an API. The interview asks about external effects and sets a safe mode before the goal starts.
+- **Does not** run `/goal` for you.
+
 ## Files
 
 - `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`: this repository is both the plugin and its marketplace
@@ -98,6 +111,20 @@ In Codex, `/goal @path/to/file.md` loads the goal from a file. It is not documen
 ## Em português
 
 A skill conversa na língua de quem a usa e escreve o mandato nessa língua, com rótulos próprios para português (`OBJETIVO`, `CONCLUÍDO QUANDO`, `PARADA`...). O exemplo 2 de `references/examples.md` é um mandato completo em português. Instalação e uso são os mesmos descritos acima.
+
+## Prior art and credits
+
+Other skills already help write `/goal` conditions, and this one takes ideas from several of them:
+
+- [grill-me](https://www.aihero.dev/my-grill-me-skill-has-gone-viral) by Matt Pocock: the interview, one question at a time, each with a recommended answer.
+- [goal-prompt-builder](https://github.com/win4r/goal-prompt-builder) by win4r, written for Codex: false-completion traps by project type, scenario skeletons, a first action that prints counts, numbers or an enumerable source instead of "all", 3 to 8 criteria, stop conditions that can be detected mechanically, and short design notes at delivery.
+- [goal-forge](https://github.com/michaelpersonal/goal-forge) by Michael Guo: a fast check while iterating and a log of discarded attempts.
+- [goal-setter](https://github.com/computerphilosopher/agent-skills/tree/main/skills/goal-setter) by computerphilosopher: what a BLOCKED report must contain, the research report format, and the `/goal @file` question.
+- [goal](https://github.com/patrick-fu/awesome-skills) by patrick-fu: the rule for when to ask and when to assume a default.
+
+Exploring approaches and then validating a design section by section follows the same pattern as the [brainstorming](https://github.com/obra/superpowers/blob/main/skills/brainstorming/SKILL.md) skill in obra/superpowers.
+
+What goal-composer adds is the verification side: the design bound into the mandate (a rejected approach becomes a stop clause), the branch (B) exit, the red-team pass on the proofs, the baseline that rejects vacuous proofs, and the independent recheck with counters and hash pinning.
 
 ## License
 
