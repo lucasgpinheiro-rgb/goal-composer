@@ -1,0 +1,13 @@
+{
+  "name": "goal-composer",
+  "version": "1.0.0",
+  "description": "Interviews you, explores 2-3 approaches, designs the work section by section and writes a transcript-verifiable mandate for Claude Code's /goal command, with red-team, baseline and an independent recheck.",
+  "author": {
+    "name": "Lucas Gonçalves Pinheiro",
+    "url": "https://github.com/lucasgpinheiro-rgb"
+  },
+  "homepage": "https://github.com/lucasgpinheiro-rgb/goal-composer",
+  "repository": "https://github.com/lucasgpinheiro-rgb/goal-composer",
+  "license": "MIT",
+  "keywords": ["goal", "autonomous", "verification", "skill", "planning"]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "goal-composer",
+  "owner": {
+    "name": "Lucas Gonçalves Pinheiro",
+    "url": "https://github.com/lucasgpinheiro-rgb"
+  },
+  "metadata": {
+    "description": "Marketplace for the goal-composer skill: verifiable mandates for Claude Code's /goal command."
+  },
+  "plugins": [
+    {
+      "name": "goal-composer",
+      "source": "./",
+      "description": "Compose verifiable /goal mandates: interview, approaches, design, contract, red-team, baseline and recheck."
+    }
+  ]
+}
