@@ -1,6 +1,6 @@
 # Evals
 
-Eval suite for `claude plugin eval` (Claude Code v2.1.269 or later). Every run and every judge call is a real model call billed to your plan or API key.
+Eval suite for `claude plugin eval` (Claude Code v2.1.269 or later). Every run and every judge call is a real model call billed to your Claude account.
 
 ## Cases
 
@@ -24,7 +24,7 @@ Each case builds its own small project with `scaffold.sh` (Python standard libra
 
 ## Run
 
-From the repository root, on Linux, macOS or WSL2 (native Windows has no sandbox for the Bash grants the pipeline cases need; on Linux install `bubblewrap` and `socat`). Python 3.10 or later.
+From the repository root, on Linux, macOS or WSL2 (native Windows has no sandbox for the Bash grants the pipeline cases need; on Linux, first install the sandbox dependencies listed in the Claude Code sandboxing documentation). Python 3.10 or later.
 
 ```
 claude plugin eval . --tag interview --scaffold --judge-model sonnet --max-cost-usd 5
