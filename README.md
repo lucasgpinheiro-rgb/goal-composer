@@ -4,6 +4,10 @@ A Claude Code skill that interviews you ("grill me" style), explores the approac
 
 > **Claude Code only.** The skill writes for Claude Code's `/goal` command and runs Python and bash scripts on your machine. If you add it from the Claude directory it may also show up in claude.ai chat and Cowork, but it cannot do its job there.
 
+![goal-composer demo: interview, baseline, /goal run and independent recheck](docs/demo.gif)
+
+*Condensed reconstruction of a session. The baseline, validator and recheck outputs are real runs on a demo project.*
+
 What you get per goal:
 
 - 2–3 alternative approaches with their trade-offs (proofs, scope, risk, turns), and a design of the chosen one validated section by section and saved as a file the executor reads first and is bound to: needing a rejected approach is a BLOCKED, not a silent switch. Depth is proportional: full for Change and Batch, method only for Audit, Research and Release review, skipped when you bring a spec;
