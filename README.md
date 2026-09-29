@@ -39,7 +39,7 @@ Inside Claude Code:
 /plugin install goal-composer@goal-composer
 ```
 
-Plugin skills are always namespaced, so the command is `/goal-composer:goal-composer`. Updates arrive through `/plugin`.
+Plugin skills are always namespaced, so the command is `/goal-composer:goal-composer`. Updates arrive through `/plugin update goal-composer@goal-composer`; auto-update is a per-marketplace setting on your side, off by default for a marketplace you add yourself (see the Claude Code docs on plugin versions and updates). Start a new session after an update.
 
 ### Manually
 
@@ -107,6 +107,15 @@ Per goal, in `.claude/goals/`: `<slug>.md` (mandate), `<slug>-design.md` (chosen
 ## Open question: `/goal @file`
 
 In Codex, `/goal @path/to/file.md` loads the goal from a file. It is not documented whether Claude Code's `/goal` expands `@file` in the condition. If it does not, the evaluator receives only the path and has nothing to judge. Test before relying on it: run `/goal @.claude/goals/<slug>.md`, then `/goal` with no argument, and check whether the status shows the file's text or just the path. Until confirmed, paste the text.
+
+## What we measured
+
+A retrospective over one real project, read from Claude Code transcripts without re-running anything: 15 goals composed with the skill and 18 `/goal` runs, in September 2026. It is a small case series with no control group, so it says what happened with the skill, not what would have happened without it.
+
+- **Red-team.** In the 3 rounds whose reports could be counted, none of the 31 attacks was fully blocked by the first draft (28 unblocked, 3 partly). In the final mandates 28 were closed, 4 of them only weakly (a rule in prose, not a check), and 3 were left open.
+- **Branch (B) exit.** 3 runs were pasted into the wrong checkout; the first-action guard printed BLOCKED and the goal ended through branch (B) with nothing touched. One older run, written before branch (B) existed, was relaunched 27 times against a 20-turn limit until the user cleared it.
+- **Recheck.** A recheck was recorded for only 4 of the 14 executed goals (all DONE), so "no false completion caught" means little. That gap is why 1.1.0 writes every baseline and recheck to `recheck-log.jsonl`.
+- **Baseline.** No vacuous or invalid proof reached the baseline in 10 goals; it caught 2 broken proof commands.
 
 ## Limits
 
