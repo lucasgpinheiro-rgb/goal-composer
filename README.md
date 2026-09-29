@@ -95,14 +95,14 @@ Under `skills/goal-composer/`:
 
 - `SKILL.md`: nine phases: reconnaissance, understanding, approaches, design, contract, drafting, red-team, baseline, delivery
 - `scripts/validate_goal.py`: mandate checks (UTF-16 length, sections, proofs, branch (B) exit and three-strike line, stop clauses, vague or unbounded terms, undetectable stop conditions, criteria count, turn budget, proofs-file consistency, design file cited and pinned); `--hash <path>` prints a SHA-256 of a file or directory
-- `scripts/recheck_goal.py`: `--baseline` before the goal, plain run after it; the full `proofs.json` format is in its docstring; pinned paths can be files or whole directories
+- `scripts/recheck_goal.py`: `--baseline` before the goal, plain run after it; the full `proofs.json` format is in its docstring; pinned paths can be files or whole directories; every run appends one line to `recheck-log.jsonl` next to the proofs file (`--no-log` to skip)
 - `references/traps.md`: false-completion traps by project type, read during the interview
 - `references/scenarios.md`: skeletons per scenario
 - `references/examples.md`: four worked examples (code, document audit in Portuguese, data batch, a vague request that is pushed back)
 
 Under `evals/`: a suite for `claude plugin eval` (interview behaviour with and without the plugin, and two full-flow conformance cases); see `evals/README.md`.
 
-Per goal, in `.claude/goals/`: `<slug>.md` (mandate), `<slug>-design.md` (chosen and rejected approaches, components, tests to criteria, steps; pinned), `<slug>-proofs.json` (proofs, counters, pins, sample, recorded baseline), optionally `<slug>-verify.*` (verifier), and `<slug>-tasks.md` (checklist kept by the executor).
+Per goal, in `.claude/goals/`: `<slug>.md` (mandate), `<slug>-design.md` (chosen and rejected approaches, components, tests to criteria, steps; pinned), `<slug>-proofs.json` (proofs, counters, pins, sample, recorded baseline), optionally `<slug>-verify.*` (verifier), and `<slug>-tasks.md` (checklist kept by the executor). Shared by all goals: `recheck-log.jsonl`, one JSON line per baseline or recheck run (goal, mode, verdict, counters, proofs file hash, time), which directory pins ignore.
 
 ## Open question: `/goal @file`
 

@@ -50,6 +50,12 @@ looks before the work is done. A unittest run that reports "Ran 0 tests" never p
 
 Exit codes: 0 DONE / BASELINE OK, 1 NOT-DONE / BASELINE INVALID, 2 BROKEN (spec or environment problem).
 Run from the project root.
+
+Run log: every run appends one JSON line to recheck-log.jsonl next to the spec (goal, mode,
+verdict, passed/total, counter values, proofs file SHA-256, expect_sha_ok, exit code, UTC time),
+so a recheck run in a plain terminal still leaves a record. --no-log skips it. A failure to
+write the log prints a warning and never changes the verdict or the exit code. Directory pins
+ignore recheck-log.jsonl.
 """
 import argparse
 import datetime
@@ -87,6 +93,7 @@ def sha256(path):
 
 
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv"}
+SKIP_FILES = {"recheck-log.jsonl"}  # the run log grows on every run; a pinned directory must not see it
 
 
 def hash_path(path):
@@ -98,7 +105,7 @@ def hash_path(path):
     lines = []
     for root, dirs, files in os.walk(path):
         dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
-        for f in sorted(files):
+        for f in sorted(x for x in files if x not in SKIP_FILES):
             full = os.path.join(root, f)
             rel = os.path.relpath(full, path).replace(os.sep, "/")
             lines.append(f"{rel}\t{sha256(full)}")
@@ -246,19 +253,52 @@ def print_sample(spec, rng_seed):
             print(f"        unreadable: {e}")
 
 
+LOG_NAME = "recheck-log.jsonl"
+
+
+def write_log(a, rec):
+    """Append one line per run to <spec dir>/recheck-log.jsonl, so every baseline and recheck
+    leaves a record even when it runs outside Claude Code. Never changes the verdict or exit code."""
+    if a.no_log:
+        return
+    rec["ts"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    try:
+        rec["proofs_sha256"] = sha256(a.spec)
+    except OSError:
+        rec["proofs_sha256"] = None
+    path = os.path.join(os.path.dirname(os.path.abspath(a.spec)), LOG_NAME)
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n")
+    except OSError as e:
+        print(f"LOG     WARN    could not append to {path}: {e}", file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("spec")
     ap.add_argument("--baseline", action="store_true", help="run before the /goal and record counters")
     ap.add_argument("--expect-sha", help="SHA-256 of the proofs file as delivered")
     ap.add_argument("--seed", type=int, help="seed for the sample (default: random)")
+    ap.add_argument("--no-log", action="store_true", help=f"do not append this run to {LOG_NAME} next to the spec")
     a = ap.parse_args()
+    rec = {"goal": re.sub(r"-proofs\.json$", "", os.path.basename(a.spec)), "spec": a.spec,
+           "mode": "baseline" if a.baseline else "recheck", "expect_sha_ok": None,
+           "verdict": None, "passed": None, "total": None, "counters": {}, "exit": None}
+    code = run(a, rec)
+    rec["exit"] = code
+    write_log(a, rec)
+    return code
 
+
+def run(a, rec):
     if a.expect_sha:
         actual = sha256(a.spec)
+        rec["expect_sha_ok"] = actual.lower() == a.expect_sha.lower()
         if actual.lower() != a.expect_sha.lower():
             print(f"SPEC    BROKEN  {a.spec} changed since delivery\n        expected {a.expect_sha}\n        actual   {actual}")
             print("\nVERDICT: BROKEN (the proofs file itself was modified; nothing below it can be trusted)")
+            rec["verdict"] = "BROKEN"
             return 2
         print(f"SPEC    OK      {a.spec} matches the delivered hash")
 
@@ -266,9 +306,12 @@ def main():
         spec = json.load(open(a.spec, encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         print(f"SPEC    BROKEN  cannot read {a.spec}: {e}\n\nVERDICT: BROKEN")
+        rec["verdict"] = "BROKEN"
         return 2
+    rec["goal"] = spec.get("goal") or rec["goal"]
     if not spec.get("proofs"):
         print("SPEC    BROKEN  no proofs listed\n\nVERDICT: BROKEN")
+        rec["verdict"] = "BROKEN"
         return 2
 
     bash = find_bash()
@@ -345,6 +388,7 @@ def main():
             show_tail(res["out"])
             broken += 1
             continue
+        rec["counters"][name] = val
         if a.baseline:
             measured[name] = val
             print(f"COUNTER OK      {name} = {val} (recorded, rule {rule})")
@@ -358,12 +402,15 @@ def main():
         fails += 0 if ok else 1
 
     passed = total - fails - broken
+    rec["passed"], rec["total"] = passed, total
     if broken:
         print(f"\nVERDICT: BROKEN ({broken} check(s) could not run; fix the spec or environment, not the work)")
+        rec["verdict"] = "BROKEN"
         return 2
     if a.baseline:
         if fails:
             print(f"\nVERDICT: BASELINE INVALID ({fails} problem(s)); fix the proofs before starting the /goal")
+            rec["verdict"] = "BASELINE INVALID"
             return 1
         spec["baseline"] = {"taken_at": datetime.datetime.now().isoformat(timespec="seconds"),
                             "counters": measured}
@@ -372,8 +419,10 @@ def main():
             f.write("\n")
         print(f"\nVERDICT: BASELINE OK ({passed}/{total})")
         print(f"Proofs file SHA-256 (use with --expect-sha after the /goal): {sha256(a.spec)}")
+        rec["verdict"] = "BASELINE OK"
         return 0
     verdict = "DONE" if fails == 0 else "NOT-DONE"
+    rec["verdict"] = verdict
     print(f"\nVERDICT: {verdict} ({passed}/{total} checks passed)")
     print_sample(spec, a.seed if a.seed is not None else random.randrange(10**6))
     return 0 if fails == 0 else 1

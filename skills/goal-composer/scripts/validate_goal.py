@@ -59,6 +59,7 @@ def sha256(path: str) -> str:
 
 
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv"}
+SKIP_FILES = {"recheck-log.jsonl"}  # same as recheck_goal.py: the run log is not part of any pin
 
 
 def hash_path(path: str) -> str:
@@ -69,7 +70,7 @@ def hash_path(path: str) -> str:
     lines = []
     for root, dirs, files in os.walk(path):
         dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
-        for f in sorted(files):
+        for f in sorted(x for x in files if x not in SKIP_FILES):
             full = os.path.join(root, f)
             rel = os.path.relpath(full, path).replace(os.sep, "/")
             lines.append(f"{rel}\t{sha256(full)}")

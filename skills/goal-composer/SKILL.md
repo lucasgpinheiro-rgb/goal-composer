@@ -263,6 +263,7 @@ Give the user:
 4. The recheck command, with the resolved path and the hash printed by the baseline, to run in their own terminal from the project root after the goal reports achieved:
    `python <skill-dir>/scripts/recheck_goal.py .claude/goals/<slug>-proofs.json --expect-sha <hash>`
    Two sentences: "achieved" means the evaluator believed the transcript; accept the work only when the recheck says DONE. `BROKEN` means the proofs file was changed or a check could not run; `NOT-DONE` output can be pasted into a new `/goal` or a normal prompt.
+   One more line: every baseline and recheck appends a line to `.claude/goals/recheck-log.jsonl`, so the result is kept even when the recheck runs in a plain terminal. Without that record nobody can later tell whether the recheck ran at all: a retrospective of 14 executed goals found a recheck in the transcripts for only 4.
 5. If a sample was agreed, say that the recheck prints it after the verdict and that reading it is the user's part of the verification.
 
 Do not run the /goal yourself.
