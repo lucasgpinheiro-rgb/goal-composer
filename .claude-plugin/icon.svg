@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 160 160" role="img" aria-label="Goal Composer">
+  <rect x="0" y="0" width="160" height="160" rx="32" fill="#134E4A"/>
+  <circle cx="80" cy="80" r="52" fill="none" stroke="#F0FDFA" stroke-width="9"/>
+  <circle cx="80" cy="80" r="30" fill="none" stroke="#F0FDFA" stroke-width="9"/>
+  <circle cx="80" cy="80" r="9" fill="#F0FDFA"/>
+  <circle cx="118" cy="118" r="26" fill="#F59E0B" stroke="#134E4A" stroke-width="6"/>
+  <path d="M106 118 L115 127 L131 109" fill="none" stroke="#134E4A" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
