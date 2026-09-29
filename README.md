@@ -100,7 +100,7 @@ Under `skills/goal-composer/`:
 - `references/scenarios.md`: skeletons per scenario
 - `references/examples.md`: four worked examples (code, document audit in Portuguese, data batch, a vague request that is pushed back)
 
-Under `evals/`: a suite for `claude plugin eval` (interview behaviour with and without the plugin, and two full-flow conformance cases); see `evals/README.md`.
+The eval suite for `claude plugin eval` (interview behaviour with and without the plugin, and two full-flow conformance cases) lives on the [`evals` branch](https://github.com/lucasgpinheiro-rgb/goal-composer/tree/evals), not on `main`, so it is not shipped to people who install the plugin. That branch is `main` plus one commit that adds `evals/`; see `evals/README.md` there.
 
 Per goal, in `.claude/goals/`: `<slug>.md` (mandate), `<slug>-design.md` (chosen and rejected approaches, components, tests to criteria, steps; pinned), `<slug>-proofs.json` (proofs, counters, pins, sample, recorded baseline), optionally `<slug>-verify.*` (verifier), and `<slug>-tasks.md` (checklist kept by the executor). Shared by all goals: `recheck-log.jsonl`, one JSON line per baseline or recheck run (goal, mode, verdict, counters, proofs file hash, time), which directory pins ignore.
 
