@@ -43,6 +43,6 @@ The cost ceilings are placeholders; adjust them. The interview group is 4 cases 
 
 ## Known traps
 
-- **unittest targets.** The pipeline fixture uses unittest. A target proof for a test module that does not exist yet is reported `BROKEN` by `recheck_goal.py` (`-m unittest tests.test_x` prints "No module named", which the script treats as a missing command), and `discover -p test_x.py` is `VACUOUS` on Python 3.10 and 3.11 ("Ran 0 tests ... OK", exit 0). The skill reaches `BASELINE OK` only by making the proof strict, for example `expect_regex` on `Ran [1-9]`. Python 3.12+ exits 5 when no test runs, so results can differ between Python versions.
+- **unittest targets.** The pipeline fixture uses unittest. Before goal-composer 1.0.1, `recheck_goal.py` reported a target for a test module that did not exist yet as `BROKEN` ("No module named"), and `discover -p test_x.py` as `VACUOUS` on Python 3.10 and 3.11 ("Ran 0 tests ... OK", exit 0). Since 1.0.1 a missing project module is an ordinary failure and a run with 0 tests never passes, so both forms fail at baseline as a target should. A missing tool or package, such as pytest not installed, is still `BROKEN`.
 - **Home directory.** Sandboxed Bash cannot read your home directory. If a pipeline transcript shows the skill failing to open `recheck_goal.py` or `validate_goal.py`, run the suite from a clone outside your home directory.
 - **Graders are the author's.** A high score says the skill does what these rubrics ask, not that the rubrics capture everything that matters.

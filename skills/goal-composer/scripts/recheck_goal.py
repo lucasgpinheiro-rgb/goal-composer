@@ -41,6 +41,13 @@ Pinned: a file or a whole directory (hash of sorted relative paths + file hashes
   __pycache__, node_modules, venvs). Get the hash with validate_goal.py --hash <path>.
 Sample: after the verdict, prints n random files matching glob (first `lines` lines each) for human review.
 
+Classification: a proof is BROKEN, not failed, when its command is not found (exit 126/127/9009 or a
+"command not found" message) or when it fails on a missing module that is not part of the project, such as
+pytest or requests not being installed. A missing module whose top-level package is a folder or .py file in
+the project root or in src/ (tests.test_retry, billing.retry) is an ordinary failure: that is how a target
+looks before the work is done. A unittest run that reports "Ran 0 tests" never passes, since Python before
+3.12 exits 0 there while pytest and later versions exit 5.
+
 Exit codes: 0 DONE / BASELINE OK, 1 NOT-DONE / BASELINE INVALID, 2 BROKEN (spec or environment problem).
 Run from the project root.
 """
@@ -61,7 +68,9 @@ IS_WIN = os.name == "nt"
 NOT_FOUND_CODES = {126, 127, 9009}
 NOT_FOUND_RE = re.compile(
     r"command not found|is not recognized as an internal or external command|"
-    r"is not recognized as the name of a cmdlet|No module named", re.I)
+    r"is not recognized as the name of a cmdlet", re.I)
+NO_MODULE_RE = re.compile(r"No module named ['\"]?([A-Za-z_][\w.]*)")
+ZERO_TESTS_RE = re.compile(r"^Ran 0 tests? in ", re.M)
 TAIL = 15
 
 
@@ -129,6 +138,13 @@ def label(item):
     return item.get("command", "<no command>")
 
 
+def is_project_module(name):
+    """True when the top-level package of a missing module is part of the project (run from its root)."""
+    top = name.split(".")[0]
+    return any(os.path.isdir(os.path.join(base, top)) or os.path.isfile(os.path.join(base, top + ".py"))
+               for base in (".", "src"))
+
+
 def execute(item, bash):
     """Return dict(rc, out, broken, timeout)."""
     shell = item.get("shell", "bash")
@@ -160,10 +176,17 @@ def execute(item, bash):
     except subprocess.TimeoutExpired:
         return {"rc": None, "out": "", "timeout": True, "broken": None}
     out = (r.stdout or "") + (r.stderr or "")
+    rc = r.returncode
     broken = None
-    if r.returncode in NOT_FOUND_CODES or (r.returncode != 0 and NOT_FOUND_RE.search(out)):
-        broken = f"command or module not found (exit {r.returncode})"
-    return {"rc": r.returncode, "out": out, "timeout": False, "broken": broken}
+    if rc in NOT_FOUND_CODES or (rc != 0 and NOT_FOUND_RE.search(out)):
+        broken = f"command not found (exit {rc})"
+    elif rc != 0:
+        # A missing tool or package (pytest, requests) is an environment problem. A missing project
+        # module (tests.test_retry, billing.retry) is what a target looks like before the work.
+        external = [m for m in NO_MODULE_RE.findall(out) if not is_project_module(m)]
+        if external:
+            broken = f"module not installed: {external[0]} (exit {rc})"
+    return {"rc": rc, "out": out, "timeout": False, "broken": broken}
 
 
 def passes(item, res):
@@ -177,6 +200,8 @@ def passes(item, res):
         problems.append(f"exit {res['rc']}, expected {exp_exit}")
     if exp_re is not None and not re.search(exp_re, res["out"], re.MULTILINE):
         problems.append(f"output does not match /{exp_re}/")
+    if ZERO_TESTS_RE.search(res["out"]):
+        problems.append("ran 0 tests")
     return not problems, problems
 
 

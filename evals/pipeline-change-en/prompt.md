@@ -5,7 +5,7 @@ runs: 1
 max_turns: 80
 timeout_seconds: 2400
 allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write, Edit]
-expected_outcome: .claude/goals/<slug>-design.md and -proofs.json exist; the transcript shows VERDICT BASELINE OK and RESULT OK; the final reply holds a mandate with the (B) ENDED branch and a recheck command with --expect-sha and a 64-hex hash. Note the fixture uses unittest, where a target for a test module that does not exist yet is reported BROKEN ("No module named") or VACUOUS ("Ran 0 tests ... OK"); the skill has to make the proof strict (for example expect_regex on "Ran [1-9]") to reach BASELINE OK.
+expected_outcome: .claude/goals/<slug>-design.md and -proofs.json exist; the transcript shows VERDICT BASELINE OK and RESULT OK; the final reply holds a mandate with the (B) ENDED branch and a recheck command with --expect-sha and a 64-hex hash.
 ---
 
 /goal-composer:goal-composer add retry with exponential backoff to fetch_invoice in billing/client.py: 3 attempts, only on timeouts, 5xx and 429, delays 0.5s, 1s, 2s.
