@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: grep-only-easy-out
+context:
+  scaffold_script: scaffold.sh
