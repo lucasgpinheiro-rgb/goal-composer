@@ -51,6 +51,12 @@ looks before the work is done. A unittest run that reports "Ran 0 tests" never p
 Exit codes: 0 DONE / BASELINE OK, 1 NOT-DONE / BASELINE INVALID, 2 BROKEN (spec or environment problem).
 Run from the project root.
 
+Side effects: when run inside a git work tree, the tree is listed before and after the checks
+(git status --porcelain --untracked-files=all). Anything the proofs themselves changed is printed as
+SIDE WARN and recorded as tree_changed in the log. It never changes the verdict: a proof that writes
+to tracked files (a test appending to a ledger, a tool regenerating a doc) is a problem of the proof,
+and it also means every recheck leaves the project dirty. Files under .claude/goals/ are ignored.
+
 Run log: every run appends one JSON line to recheck-log.jsonl next to the spec (goal, mode,
 verdict, passed/total, counter values, proofs file SHA-256, expect_sha_ok, exit code, UTC time),
 so a recheck run in a plain terminal still leaves a record. --no-log skips it. A failure to
@@ -253,6 +259,27 @@ def print_sample(spec, rng_seed):
             print(f"        unreadable: {e}")
 
 
+def tree_state():
+    """Set of `git status --porcelain` entries, or None outside a git work tree (then nothing is compared)."""
+    try:
+        r = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"],
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    return {line for line in r.stdout.splitlines() if line.strip()}
+
+
+def tree_changes(before):
+    """Paths whose status entry is new after the checks; the skill's own folder is not the project's."""
+    after = tree_state()
+    if before is None or after is None:
+        return []
+    paths = sorted({e[3:] for e in after - before})
+    return [p for p in paths if not p.startswith(".claude/goals/")]
+
+
 LOG_NAME = "recheck-log.jsonl"
 
 
@@ -315,6 +342,7 @@ def run(a, rec):
         return 2
 
     bash = find_bash()
+    tree_before = tree_state()
     mode = "BASELINE" if a.baseline else "RECHECK"
     print(f"{mode} | bash: {bash or 'not found'} | python: {sys.executable}\n")
     fails, broken, total = 0, 0, 0
@@ -400,6 +428,13 @@ def run(a, rec):
         ok = val >= base[name] if rule == "no_decrease" else val <= base[name]
         print(f"COUNTER {'OK    ' if ok else 'FAIL  '}  {name} = {val} (baseline {base[name]}, {rule})")
         fails += 0 if ok else 1
+
+    changed = tree_changes(tree_before)
+    if changed:
+        rec["tree_changed"] = changed
+        shown = ", ".join(changed[:8]) + (f" (+{len(changed) - 8} more)" if len(changed) > 8 else "")
+        print(f"SIDE    WARN    running the proofs changed the working tree: {shown}")
+        print("        the verdict below still stands; make those proofs side-effect free or run them in a scratch copy")
 
     passed = total - fails - broken
     rec["passed"], rec["total"] = passed, total
