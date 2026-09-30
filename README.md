@@ -121,7 +121,7 @@ A retrospective over one real project, read from Claude Code transcripts without
 
 - No check guarantees that a proof captures your intent. The baseline, counters and red-team make proofs harder to satisfy vacuously or by shortcut; they do not make them complete. The sample exists for the part only you can judge.
 - Subjective end states (style, tone, "reads well") have no transcript proof; the skill says so instead of writing a condition that cannot be judged.
-- Exercised in practice on Windows 11 with Git Bash. macOS and Linux have not been exercised yet; please report issues.
+- Exercised in practice on Windows 11 with Git Bash, and on Linux (Ubuntu, bash, Claude Code 2.1.285: two goals composed, baselines and rechecks run, mandates in Portuguese). macOS has not been exercised yet; please report issues.
 
 ## Em português
 
