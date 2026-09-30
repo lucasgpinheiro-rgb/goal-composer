@@ -1,6 +1,6 @@
 ---
 name: goal-composer
-description: Interviews the user "grill me" style, explores 2-3 alternative approaches, designs the implementation section by section, and drafts a ready-to-paste mandate for Claude Code's /goal command (max 4,000 characters) with transcript-verifiable proofs, scope, constraints, forbidden shortcuts, a task checklist and stop clauses; red-teams the proofs, checks at baseline that they are not vacuous, and ships an independent post-run recheck. Scenario skeletons for change, batch, audit, research and release-review goals; works for code, document and data projects. Use when the user invokes /goal-composer or asks to write, review or improve a /goal condition for a long autonomous task.
+description: Use when the user invokes /goal-composer, or asks to write, review or improve a condition for Claude Code's /goal command before starting a long autonomous task, for code, document or data projects.
 argument-hint: "[free-form description of what the /goal should accomplish]"
 disable-model-invocation: true
 ---
@@ -86,7 +86,7 @@ Design the chosen approach and present it **one section at a time**, about 200�
 - (b) **Components** — files, functions, tables or documents touched, and which are created.
 - (c) **Data flow** — how input becomes output through (b).
 - (d) **Error handling** — what can fail and what the code or the executor does then.
-- (e) **Tests** — each test or check, already paired with the criterion it will prove.
+- (e) **Tests** — each test or check, already paired with the criterion it will prove **and the break it catches**: a concrete wrong implementation or shortcut that would make it fail (a wrong constant, the wrong branch, an empty return, a missing validation, a deleted or weakened test). Name the break before choosing the check; if no break can be named, the check proves nothing.
 - (f) **Steps** — numbered work order, each step with its fast check.
 
 For Audit, Research and Release review goals, (b)–(d) collapse into one section, **Method**: sources, reading order, citation rule, when to stop searching.
@@ -104,7 +104,7 @@ Rejected: <name> - <why>   (one line each)
 ## Data flow
 ## Error handling
 ## Tests -> criteria
-- <test or check> -> criterion <n>
+- <test or check> -> criterion <n> - catches: <the wrong implementation or shortcut it fails on>
 ## Steps
 1. <step> - fast check: <command>
 ```
@@ -132,6 +132,7 @@ Derive the contract from the design first, then ask about what is still open.
    - **b. Direct proof** — At least one target exercises the new behavior directly (a named test, a check on the specific output), not only a broad proxy like "the whole suite passes".
    - **c. Verifier script** — If no ready-made command exists, offer to write a small verifier now, for the user to review before the /goal starts. It prints a clear PASS/FAIL line and the counts behind it. Written now, not during the run, because an executor that writes its own checker grades its own homework.
    - **d. Fast check** — If the full proofs are slow (a long suite, a full rebuild, a large dataset), agree on a cheap representative check for the executor to run while iterating (one test file, one sample document, a 1% sample). Full proofs are still required before declaring completion. The design's steps already carry one each; confirm them here.
+   - **e. Named break** — Every `target` proof carries the break it catches, from design section (e): the wrong implementation or shortcut that would make it fail. The baseline only proves a target fails *before* the work; the named break says it would also fail on *wrong* work. A target with no nameable break is vacuous in spirit even when it fails at baseline: tighten it or drop it. Mentally mutate the change (wrong constant, wrong branch, empty return, missing validation, missing side effect) and check that some proof fails for each mutation that matters.
 2. **Counters** — Which numbers could the executor shrink to fake success: tests, records, chapters, rows, files? Each becomes a counter with rule `no_decrease` (or `no_increase` for warnings or pending items).
 3. **Forbidden shortcuts** — Which shortcuts would invalidate the result? Start from the traps in `references/traps.md` for this project type, then add task-specific ones. Always: modifying anything in `.claude/goals/` except the checklist (the design file included).
 4. **Blocked** — When should the executor stop instead of pushing on? Each situation must be mechanically detectable: a forbidden file appears in the diff, a command needs a credential missing from `.env`, a source file fails to parse, a new dependency would be required, the work needs an approach the design rejected. "If unclear" or "if in doubt" is not a condition. Always include the generic one: a needed change falls outside SCOPE or against a CONSTRAINT.
@@ -163,14 +164,14 @@ CONSTRAINTS: the approach is the one in .claude/goals/<slug>-design.md; the orde
 
 EXTERNAL EFFECTS: <safe mode; what is off limits>.
 
-PER-TURN PROTOCOL: on the first turn, create the checklist .claude/goals/<slug>-tasks.md with one line per criterion and per design step and a section "Discarded attempts". Tick items when done; log each abandoned approach in one line with the reason, and do not retry a logged approach without new evidence. While iterating, run <fast check>. At the end of every turn, update the checklist and print "PROGRESS: <x>/<N> criteria | TURN <n> | next: <step>". Before declaring completion, rerun every proof in the same turn and print the outputs.
+PER-TURN PROTOCOL: on the first turn, create the checklist .claude/goals/<slug>-tasks.md with one line per criterion and per design step and a section "Discarded attempts". Tick items when done; log each abandoned approach in one line with the reason, and do not retry a logged approach without new evidence. Log every deviation from the design, and every decision the mandate does not settle, in the checklist as "RULING: <what> - <why> - <cost if wrong>", and list all rulings in the final summary. While iterating, run <fast check>. At the end of every turn, update the checklist and print "PROGRESS: <x>/<N> criteria | TURN <n> | next: <step>". Before declaring completion, rerun every proof in the same turn and print the outputs.
 
 STOP: the goal also ends if (a) the executor prints "BLOCKED: <blocker>" when <situations>, when a needed change falls outside SCOPE or against a CONSTRAINT, or when the work needs an approach the design rejected, followed by the approaches tried, the evidence gathered and the input needed to continue. Each later relaunch while still blocked prints one line only: "BLOCKED (<k>/3): waiting for the user". The third "BLOCKED" line satisfies (B) in DONE WHEN and ends the goal; or (b) it reaches <N> turns, printing "LIMIT REACHED" with the current state of each criterion, which satisfies (B) as well.
 ```
 
 The bracketed checkout guard is kept only when the goal must run in a specific checkout or worktree. Omit the design file from FIRST ACTION and CONSTRAINTS only when Phases 3–4 were skipped without a spec file taking its place; omit the fast-check sentence when proofs are already fast.
 
-Portuguese labels, same structure: `OBJETIVO:`, `PRIMEIRA AÇÃO:` ("...; depois siga sem aguardar"; guard: "imprima `git rev-parse --show-toplevel`; se não for <caminho>, imprima \"BLOQUEADO: checkout errado\" e pare"), and the two branches as `CONCLUÍDO QUANDO (B) OU (A). Confira (B) PRIMEIRO; se (B) valer a resposta é cumprido, e os critérios de (A) não se consultam.` / `(B) ENCERRADO: o transcript tem três linhas começadas por "BLOQUEADO", ou uma começada por "LIMITE ATINGIDO". Terminar num bloqueio ou no teto de turnos é um FIM VÁLIDO deste goal, não uma falha; com (B) verdadeiro, ter chegado ou não a (A) é irrelevante e "não cumprido" é a resposta errada.` / `(A) Todas as seguintes são verdadeiras e as saídas estão coladas no transcript:`, `prova:`, `ESCOPO:`, `RESTRIÇÕES:` opening with "a abordagem é a de .claude/goals/<slug>-design.md; a ordem dos passos é guia." and with `Proibido:`, `EFEITOS EXTERNOS:`, `PROTOCOLO POR TURNO:` with one line per criterion and per design step and the section "Tentativas descartadas", `PROGRESSO:` / `TURNO`, `PARADA:` with `BLOQUEADO:` (situations include "uma mudança necessária cair fora do ESCOPO ou contra uma RESTRIÇÃO" and "o trabalho exigir uma abordagem que o desenho rejeitou"), the three-strike line "BLOQUEADO (<k>/3): aguardando o usuário", and `LIMITE ATINGIDO`.
+Portuguese labels, same structure: `OBJETIVO:`, `PRIMEIRA AÇÃO:` ("...; depois siga sem aguardar"; guard: "imprima `git rev-parse --show-toplevel`; se não for <caminho>, imprima \"BLOQUEADO: checkout errado\" e pare"), and the two branches as `CONCLUÍDO QUANDO (B) OU (A). Confira (B) PRIMEIRO; se (B) valer a resposta é cumprido, e os critérios de (A) não se consultam.` / `(B) ENCERRADO: o transcript tem três linhas começadas por "BLOQUEADO", ou uma começada por "LIMITE ATINGIDO". Terminar num bloqueio ou no teto de turnos é um FIM VÁLIDO deste goal, não uma falha; com (B) verdadeiro, ter chegado ou não a (A) é irrelevante e "não cumprido" é a resposta errada.` / `(A) Todas as seguintes são verdadeiras e as saídas estão coladas no transcript:`, `prova:`, `ESCOPO:`, `RESTRIÇÕES:` opening with "a abordagem é a de .claude/goals/<slug>-design.md; a ordem dos passos é guia." and with `Proibido:`, `EFEITOS EXTERNOS:`, `PROTOCOLO POR TURNO:` with one line per criterion and per design step, the section "Tentativas descartadas", and the ruling sentence as "registre cada desvio do desenho e cada decisão que o mandato não resolve no checklist como \"DECISÃO: <o quê> - <porquê> - <custo se errada>\", e liste todas no resumo final", `PROGRESSO:` / `TURNO`, `PARADA:` with `BLOQUEADO:` (situations include "uma mudança necessária cair fora do ESCOPO ou contra uma RESTRIÇÃO" and "o trabalho exigir uma abordagem que o desenho rejeitou"), the three-strike line "BLOQUEADO (<k>/3): aguardando o usuário", and `LIMITE ATINGIDO`.
 
 Counter values are filled in after the baseline (Phase 8); leave a placeholder until then.
 
@@ -185,10 +186,12 @@ Why each piece exists (use this to decide what to cut or keep):
 - **Fast check**: rerunning a slow suite every turn burns the budget; the full proofs still gate completion.
 - **Final rerun**: stops the evaluator from accepting an old result from before a regression.
 - **Checklist and discarded attempts**: on long runs Claude Code summarizes older turns; the file survives that, so the executor neither loses track nor retries what already failed. It does not replace the PROGRESS line, because the evaluator does not read files.
+- **Rulings**: the executor will meet decisions the mandate does not settle. Unlogged, each one is a decision made where nobody sees it; logged as what, why and cost if wrong, and listed in the final summary, the user can check the approach stayed bound and undo a bad call. (From obra/superpowers.)
 - **BLOCKED with a report**: turns a dead end into a readable ending, and the report saves the user from re-investigating from zero.
 - **BLOCKED ends the goal after 3, and the exit must SATISFY the condition, not override it**: the evaluator reads "DONE WHEN" literally and treats a blocked run as not-met, relaunching turns forever; each relaunch costs tokens even with a one-line reply (measured twice on 2026-09-24, ~8 and ~12 empty turns). Putting the exit inside the condition text as a POLICY ("the evaluator must answer met, never not-met") is NOT enough: on 2026-09-25 an evaluator counted the three "BLOQUEADO" lines out loud, quoted that very clause, and still answered not-met four times in a row, reasoning that no criterion had evidence. It resolves a conflict between a policy and the literal criteria in favour of the criteria. So the exit is written as branch (B) of DONE WHEN, checked BEFORE (A), self-contained (countable from the transcript alone) and declared a valid ending. Never demote it back to a cross-reference or a note to the evaluator, and never drop it to save characters. `validate_goal.py` rejects a mandate without it.
 - **Turn counter**: the limit only works because the executor reports the number and the evaluator reads it.
 - **Forbidden shortcuts and counters**: the executor optimizes toward the condition; without them, deleting the failing test or emptying the failing record "satisfies" it. The prose rule tells the evaluator; the counter catches it mechanically.
+- **Named breaks and checks over prose**: a prose prohibition tells the executor what not to do but does not stop it; only a proof, counter, pin or verifier case does. A retrospective of real goals found 4 of 28 red-team fixes were prose only, and none of 31 attacks fully blocked by first drafts. So each target proof names the wrong work it fails on, and a fix counts as a check only when something fails mechanically. (From obra/superpowers: "name the break" and "match the form to the failure".)
 - **Baseline and recheck** (Phases 8–9): the baseline proves each target can fail, so passing later means something; the recheck re-runs everything outside the executor.
 
 Drafting rules:
@@ -207,12 +210,14 @@ You are attacking a completion contract for an autonomous agent.
 Objective: <objective>
 Scope: <scope>
 Design: <chosen approach; rejected approaches; the numbered steps>
-Proofs: <each proof command and what it is supposed to show>
+Proofs: <each proof command, what it is supposed to show, and the break it claims to catch>
 Constraints, counters and forbidden shortcuts: <list>
 For each proof, find the cheapest way to make it pass WITHOUT achieving the objective
 (e.g. hardcoding, deleting items, weakening checks, touching files the proof reads,
 exploiting what the proof does not look at). For each attack: the concrete steps,
-and whether the current constraints or counters already block it (yes/no, which one).
+and whether the current constraints or counters already block it (yes/no, which one),
+and whether that block is a check that fails mechanically or only a prose rule.
+Also: which wrong implementation passes that none of the named breaks covers?
 Also: can the executor follow the design step by step and pass every proof while
 still missing the objective? Is any design step or component left with no proof?
 Name any part of the objective that no proof checks. Be concrete; no general advice.
@@ -220,7 +225,9 @@ Name any part of the objective that no proof checks. Be concrete; no general adv
 
 If subagents are unavailable, do the same analysis yourself and tell the user it is a self-review, which is weaker.
 
-Show the user each unblocked attack with your proposed fix: a narrower proof, a new counter, an added prohibition, a pinned path, an extra invariant, or a change to the design. Apply the ones they accept (a design change is shown as the edited section, confirmed like in Phase 4) and re-check the draft length.
+Show the user each unblocked attack with your proposed fix: a narrower proof, a new counter, an added prohibition, a pinned path, an extra invariant, a new verifier case, or a change to the design. Apply the ones they accept (a design change is shown as the edited section, confirmed like in Phase 4) and re-check the draft length.
+
+**Match the form to the failure.** Label each accepted fix **check** (a proof, counter, pin or verifier case that fails mechanically on the attack) or **prose** (a written prohibition the evaluator is asked to enforce). Prefer a check; use prose only when no check is possible, and then say so: prose fixes are listed as "weak closes" in the design notes at delivery, so the user knows which attacks rest on the evaluator's reading alone.
 
 ## Phase 8 — Files and baseline
 
@@ -230,7 +237,8 @@ Do this with the project in its starting state, before any work toward the goal.
 2. Save `.claude/goals/<short-slug>-proofs.json` (full field reference in the docstring of `recheck_goal.py`):
    ```json
    {"goal": "<slug>",
-    "proofs": [{"criterion": "1", "kind": "target", "command": "{python} -m pytest tests/test_x.py::test_new -q"},
+    "proofs": [{"criterion": "1", "kind": "target", "command": "{python} -m pytest tests/test_x.py::test_new -q",
+                "catches": "<the wrong implementation or shortcut this proof fails on>"},
                {"criterion": "2", "kind": "invariant", "command": "{python} -m pytest -q"}],
     "counters": [{"name": "tests", "command": "{python} -m pytest --collect-only -q",
                   "regex": "(\\d+) tests? collected", "rule": "no_decrease"}],
@@ -239,7 +247,7 @@ Do this with the project in its starting state, before any work toward the goal.
                {"path": "sources/", "sha256": "<hash>"}],
     "sample": {"glob": "out/**/*.md", "n": 5, "lines": 20}}
    ```
-   Rules: one entry per proof in the mandate, same command; write `{python}` wherever the command calls Python; commands run in bash from the project root; success defaults to exit 0, add `expect_regex` when success is a printed line; always pin the design file (or the spec that replaced it); pin a whole directory to prove that sources or raw data stayed untouched (`validate_goal.py --hash <dir>`); omit `counters`, `sample` or the other pins when not agreed.
+   Rules: one entry per proof in the mandate, same command; write `{python}` wherever the command calls Python; commands run in bash from the project root; success defaults to exit 0, add `expect_regex` when success is a printed line; give every `target` a `catches` line copied from design section (e) (the recheck ignores it; it records what the proof was meant to fail on, and `validate_goal.py` warns when it is missing); always pin the design file (or the spec that replaced it); pin a whole directory to prove that sources or raw data stayed untouched (`validate_goal.py --hash <dir>`); omit `counters`, `sample` or the other pins when not agreed.
 3. Run the baseline:
    `python <skill-dir>/scripts/recheck_goal.py .claude/goals/<slug>-proofs.json --baseline`
    It must end in `BASELINE OK`. Otherwise:
@@ -257,7 +265,7 @@ Do this with the project in its starting state, before any work toward the goal.
 Give the user:
 
 1. The full mandate in a code block and the character count reported by the validator.
-2. The path of the design file, and design notes: at most 5 short lines on the non-obvious choices (why this approach over the rejected ones, why a proof is a target, which trap a prohibition blocks, why this counter, why this turn limit). No tutorial.
+2. The path of the design file, and design notes: at most 5 short lines on the non-obvious choices (why this approach over the rejected ones, why a proof is a target, which trap a prohibition blocks, why this counter, why this turn limit). No tutorial. Then list the **weak closes** from Phase 7, one line each (the attack, and why no check was possible), or "none".
 3. Usage: type `/goal ` and paste the text. One line: unattended runs need auto mode, `/goal` with no argument shows status, `/goal clear` cancels.
    **Say in which directory the session must be**, and say it next to the paste instruction, not only in the setup steps above it: `/goal` inherits the cwd of the session where it is pasted, NOT any path named inside the mandate. On 2026-09-25 a mandate written for a worktree was pasted in the session that had just prepared it, the first-action guard fired correctly, and the run ended on the three-strike exit having done nothing.
 4. The recheck command, with the resolved path and the hash printed by the baseline, to run in their own terminal from the project root after the goal reports achieved:

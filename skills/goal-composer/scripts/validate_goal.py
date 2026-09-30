@@ -131,6 +131,9 @@ def validate(path: str) -> int:
         warnings.append("no checklist file (e.g. .claude/goals/<slug>-tasks.md)")
     if re.search(r"VERIFIER|VERIFICADOR|-VERIFY\.", t) and not re.search(r"\b[0-9A-F]{64}\b", t):
         warnings.append("mentions a verifier but no SHA-256 hash is pinned in the mandate")
+    if not any_in(t, ["RULING", "DECISAO:"]):
+        warnings.append("no ruling log: deviations from the design would be decided where nobody sees them "
+                        "(add 'RULING: <what> - <why> - <cost if wrong>' to the per-turn protocol)")
 
     import os
     design = re.sub(r"\.md$", "", path) + "-design.md"
@@ -147,6 +150,11 @@ def validate(path: str) -> int:
             ps = json.load(open(proofs, encoding="utf-8"))
             if not any(p.get("kind", "target") == "target" for p in ps.get("proofs", [])):
                 warnings.append("proofs file has no 'target' proof: nothing must change for it to pass")
+            sem_break = [p.get("criterion", "?") for p in ps.get("proofs", [])
+                         if p.get("kind", "target") == "target" and not str(p.get("catches", "")).strip()]
+            if sem_break:
+                warnings.append(f"target proof(s) {', '.join(map(str, sem_break))} have no 'catches': "
+                                "name the wrong implementation or shortcut each one fails on")
             pins = [p.get("path", "") for p in ps.get("pinned", [])]
             if os.path.exists(design) and not any(p.endswith(design_name) for p in pins):
                 warnings.append(f"{design_name} is not in 'pinned': the executor could rewrite "

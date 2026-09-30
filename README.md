@@ -94,7 +94,7 @@ Everything happens in your Claude Code session, under your own permission settin
 Under `skills/goal-composer/`:
 
 - `SKILL.md`: nine phases: reconnaissance, understanding, approaches, design, contract, drafting, red-team, baseline, delivery
-- `scripts/validate_goal.py`: mandate checks (UTF-16 length, sections, proofs, branch (B) exit and three-strike line, stop clauses, vague or unbounded terms, undetectable stop conditions, criteria count, turn budget, proofs-file consistency, design file cited and pinned); `--hash <path>` prints a SHA-256 of a file or directory
+- `scripts/validate_goal.py`: mandate checks (UTF-16 length, sections, proofs, branch (B) exit and three-strike line, stop clauses, vague or unbounded terms, undetectable stop conditions, criteria count, turn budget, proofs-file consistency, design file cited and pinned, a `catches` line on every target proof, a ruling log in the per-turn protocol); `--hash <path>` prints a SHA-256 of a file or directory
 - `scripts/recheck_goal.py`: `--baseline` before the goal, plain run after it; the full `proofs.json` format is in its docstring; pinned paths can be files or whole directories; every run appends one line to `recheck-log.jsonl` next to the proofs file (`--no-log` to skip)
 - `references/traps.md`: false-completion traps by project type, read during the interview
 - `references/scenarios.md`: skeletons per scenario
@@ -137,7 +137,7 @@ Other skills already help write `/goal` conditions, and this one takes ideas fro
 - [goal-setter](https://github.com/computerphilosopher/agent-skills/tree/main/skills/goal-setter) by computerphilosopher: what a BLOCKED report must contain, the research report format, and the `/goal @file` question.
 - [goal](https://github.com/patrick-fu/awesome-skills) by patrick-fu: the rule for when to ask and when to assume a default.
 
-Exploring approaches and then validating a design section by section follows the same pattern as the [brainstorming](https://github.com/obra/superpowers/blob/main/skills/brainstorming/SKILL.md) skill in obra/superpowers.
+Exploring approaches and then validating a design section by section follows the same pattern as the [brainstorming](https://github.com/obra/superpowers/blob/main/skills/brainstorming/SKILL.md) skill in obra/superpowers. Three more ideas come from the same repository (MIT): every target proof names the break it catches ("name the break", from `test-driven-development/writing-good-tests.md`); a red-team fix counts as closed only when it is a check that fails mechanically, not a prose rule ("match the form to the failure", from `writing-skills`); and the executor logs every decision the mandate does not settle as a ruling with its cost if wrong (from `subagent-driven-development`).
 
 What goal-composer adds is the verification side: the design bound into the mandate (a rejected approach becomes a stop clause), the branch (B) exit, the red-team pass on the proofs, the baseline that rejects vacuous proofs, and the independent recheck with counters and hash pinning.
 

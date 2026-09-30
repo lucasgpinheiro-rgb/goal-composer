@@ -35,6 +35,7 @@ Fields per proof or counter:
   expect_exit   default 0 when expect_regex is absent
   expect_regex  searched in stdout+stderr (multiline)
   timeout       seconds, default 600
+  catches       (targets) the wrong implementation or shortcut the proof fails on; recorded, not run
 Counters: value = first capture group of "regex", or the first integer in the output.
   rule no_decrease (final >= baseline) | no_increase (final <= baseline). Baseline values are stored in the file.
 Pinned: a file or a whole directory (hash of sorted relative paths + file hashes; skips .git,

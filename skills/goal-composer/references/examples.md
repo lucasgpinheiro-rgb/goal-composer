@@ -37,8 +37,8 @@ billing/client.py (fetch_invoice); new tests/billing/test_retry.py
 ## Error handling
 after the 3rd failure, re-raise the last exception unchanged
 ## Tests -> criteria
-- test_retries_on_timeout_5xx_429 -> 1
-- test_no_retry_on_other_4xx -> 2
+- test_retries_on_timeout_5xx_429 -> 1 - catches: 2 or 4 attempts instead of 3; 429 not retried; delays not doubling
+- test_no_retry_on_other_4xx -> 2 - catches: retrying every error, e.g. a bare except around the call
 ## Steps
 1. write both tests (they fail) - fast check: pytest tests/billing/test_retry.py -q
 2. add the loop with injectable sleep - fast check: same
@@ -67,7 +67,7 @@ CONSTRAINTS: the approach is the one in .claude/goals/invoice-retry-design.md; t
 
 EXTERNAL EFFECTS: no network calls in tests.
 
-PER-TURN PROTOCOL: on the first turn, create the checklist .claude/goals/invoice-retry-tasks.md with one line per criterion and per design step and a section "Discarded attempts". Tick items when done; log each abandoned approach in one line with the reason, and do not retry a logged approach without new evidence. At the end of every turn, update the checklist and print "PROGRESS: <x>/4 criteria | TURN <n> | next: <step>". Before declaring completion, rerun every proof in the same turn and print the outputs.
+PER-TURN PROTOCOL: on the first turn, create the checklist .claude/goals/invoice-retry-tasks.md with one line per criterion and per design step and a section "Discarded attempts". Tick items when done; log each abandoned approach in one line with the reason, and do not retry a logged approach without new evidence. Log every deviation from the design, and every decision the mandate does not settle, in the checklist as "RULING: <what> - <why> - <cost if wrong>", and list all rulings in the final summary. At the end of every turn, update the checklist and print "PROGRESS: <x>/4 criteria | TURN <n> | next: <step>". Before declaring completion, rerun every proof in the same turn and print the outputs.
 
 STOP: the goal also ends if (a) the executor prints "BLOCKED: <blocker>" when a change outside billing/ becomes necessary, a new dependency would be required, or a needed change falls outside SCOPE or against a CONSTRAINT, followed by the approaches tried, the evidence gathered and the input needed to continue. Each later relaunch while still blocked prints one line only: "BLOCKED (<k>/3): waiting for the user". The third "BLOCKED" line satisfies (B) in DONE WHEN and ends the goal; or (b) it reaches 15 turns, printing "LIMIT REACHED" with the current state of each criterion, which satisfies (B) as well.
 ```
@@ -78,8 +78,10 @@ Note that "needs an approach the design rejected" is covered here by the more co
 ```json
 {"goal": "invoice-retry",
  "proofs": [
-  {"criterion": "1", "kind": "target", "command": "{python} -m pytest tests/billing/test_retry.py -q"},
-  {"criterion": "2", "kind": "target", "command": "{python} -m pytest tests/billing/test_retry.py -q -k no_retry"},
+  {"criterion": "1", "kind": "target", "command": "{python} -m pytest tests/billing/test_retry.py -q",
+   "catches": "2 or 4 attempts instead of 3; 429 not retried; delays not doubling"},
+  {"criterion": "2", "kind": "target", "command": "{python} -m pytest tests/billing/test_retry.py -q -k no_retry",
+   "catches": "retrying every error, e.g. a bare except around the call"},
   {"criterion": "3", "kind": "invariant", "command": "{python} -m pytest -q -rs"},
   {"criterion": "4", "kind": "invariant", "command": "{python} -m mypy billing/"}],
  "counters": [{"name": "tests", "command": "{python} -m pytest --collect-only -q",
@@ -125,7 +127,7 @@ RESTRIÇÕES: a abordagem é a de .claude/goals/auditoria-design.md; a ordem dos
 
 EFEITOS EXTERNOS: nenhum.
 
-PROTOCOLO POR TURNO: no primeiro turno, crie o checklist .claude/goals/auditoria-tasks.md com uma linha por procedimento e por passo do desenho e a seção "Tentativas descartadas". Marque cada item ao concluir; registre em uma linha cada abordagem abandonada e o motivo, e não repita uma abordagem registrada sem evidência nova. Enquanto trabalha, rode o verificador só para o procedimento atual. Ao fim de cada turno, atualize o checklist e imprima "PROGRESSO: <x>/4 critérios | TURNO <n> | próximo: <passo>". Antes de declarar conclusão, rode todas as provas no mesmo turno e imprima as saídas.
+PROTOCOLO POR TURNO: no primeiro turno, crie o checklist .claude/goals/auditoria-tasks.md com uma linha por procedimento e por passo do desenho e a seção "Tentativas descartadas". Marque cada item ao concluir; registre em uma linha cada abordagem abandonada e o motivo, e não repita uma abordagem registrada sem evidência nova. Registre cada desvio do desenho e cada decisão que o mandato não resolve no checklist como "DECISÃO: <o quê> - <porquê> - <custo se errada>", e liste todas no resumo final. Enquanto trabalha, rode o verificador só para o procedimento atual. Ao fim de cada turno, atualize o checklist e imprima "PROGRESSO: <x>/4 critérios | TURNO <n> | próximo: <passo>". Antes de declarar conclusão, rode todas as provas no mesmo turno e imprima as saídas.
 
 PARADA: o objetivo também se encerra se (a) o executor imprimir "BLOQUEADO: <bloqueio>" quando um procedimento não puder ser lido como texto, dois itens do checklist se contradisserem, ou uma mudança necessária cair fora do ESCOPO ou contra uma RESTRIÇÃO, seguido das abordagens tentadas, da evidência reunida e da informação necessária para seguir. Cada relançamento ainda bloqueado imprime uma linha só: "BLOQUEADO (<k>/3): aguardando o usuário". A terceira linha "BLOQUEADO" satisfaz (B) e encerra o goal; ou (b) chegar a 20 turnos, imprimindo "LIMITE ATINGIDO" com o estado de cada critério, o que também satisfaz (B).
 ```
@@ -184,7 +186,7 @@ CONSTRAINTS: the approach is the one in .claude/goals/sales-design.md; the order
 
 EXTERNAL EFFECTS: none.
 
-PER-TURN PROTOCOL: on the first turn, create the checklist .claude/goals/sales-tasks.md with one line per file, criterion and design step and a section "Discarded attempts". Tick items when done; log each abandoned approach in one line with the reason, and do not retry a logged approach without new evidence. While iterating, run the verifier on January only (`--month 01`). At the end of every turn, update the checklist and print "PROGRESS: <x>/4 criteria | TURN <n> | next: <step>". Before declaring completion, rerun every proof in the same turn and print the outputs.
+PER-TURN PROTOCOL: on the first turn, create the checklist .claude/goals/sales-tasks.md with one line per file, criterion and design step and a section "Discarded attempts". Tick items when done; log each abandoned approach in one line with the reason, and do not retry a logged approach without new evidence. Log every deviation from the design, and every decision the mandate does not settle, in the checklist as "RULING: <what> - <why> - <cost if wrong>", and list all rulings in the final summary. While iterating, run the verifier on January only (`--month 01`). At the end of every turn, update the checklist and print "PROGRESS: <x>/4 criteria | TURN <n> | next: <step>". Before declaring completion, rerun every proof in the same turn and print the outputs.
 
 STOP: the goal also ends if (a) the executor prints "BLOCKED: <blocker>" when a file fails to parse with any known encoding, a column is missing from a file, a file's locale cannot be detected, or a needed change falls outside SCOPE or against a CONSTRAINT, followed by the approaches tried, the evidence gathered and the input needed to continue. Each later relaunch while still blocked prints one line only: "BLOCKED (<k>/3): waiting for the user". The third "BLOCKED" line satisfies (B) in DONE WHEN and ends the goal; or (b) it reaches 25 turns, printing "LIMIT REACHED" with the current state of each criterion, which satisfies (B) as well.
 ```
