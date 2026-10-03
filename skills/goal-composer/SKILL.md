@@ -28,7 +28,7 @@ If the request is empty, your first question is: "What should exist or be true w
 - `references/scenarios.md`: skeletons for Change, Batch, Audit, Research and Release review goals, with the typical approaches and design depth of each. Read the chosen one in Phase 1.
 - `references/examples.md`: complete worked examples. Read it when unsure how to fill a section or when the request looks too vague to render.
 
-**Flow:** 1 Reconnaissance, 2 Understanding, 3 Approaches, 4 Design, 5 Contract, 6 Drafting, 7 Red-team, 8 Files and baseline, 9 Delivery.
+**Flow:** 1 Reconnaissance, 2 Understanding, 3 Approaches, 4 Design, 5 Contract, 6 Drafting, 7 Red-team, 8 Files, baseline and attacks, 9 Delivery.
 
 ## Phase 1 — Reconnaissance (before asking)
 
@@ -36,7 +36,7 @@ Answer what you can on your own. Read CLAUDE.md and README if present, list the 
 
 1. **Project type** — Code (manifests, test and lint commands, CI), Documents (.md, .docx, .tex, .pdf, .txt; conventions, templates, indexes), Data (.csv, .xlsx, .json, .parquet, notebooks, SQL; schemas, reference files), or Mixed. Read the matching sections of `references/traps.md`.
 2. **Scenario** — pick one from `references/scenarios.md` (Change, Batch, Audit, Research, Release review, or Custom with the bare template) and announce it in one line so the user can correct you: "This looks like an Audit goal: read-only, against <reference>. Correct me if not."
-3. **Starting point** — If there are uncommitted changes and the goal relies on diffs or read-only guarantees, say so: the baseline needs a clean, known starting point; suggest commit or stash before Phase 8.
+3. **Starting point** — If there are uncommitted changes and the goal relies on diffs or read-only guarantees, say so: the baseline needs a clean, known starting point; suggest commit or stash before Phase 8. The attack run in Phase 8 also needs it: it rebuilds the project from HEAD in a throwaway worktree, so changed tracked files make it refuse to run.
 4. **Pre-flight of every blocking condition** — List each condition that would make the executor stop (each STOP situation you are about to write) and MEASURE now every one that can be measured read-only: the data the goal selects actually exists, the host is in the assumed state, existing tests the change will collide with (grep asserts that count or pin things the change adds to; run the suite against a throwaway draft if cheap), credentials are present. A condition that only the user can decide is not a mid-run BLOCKED: either get the decision before the goal, or END the goal at that point (e.g. "prepare and print the reference values, stop before the paid calls"). Plan the goal only up to the first undecidable condition. Report the pre-flight results in the pre-draft summary. (Added after two goals blocked on conditions a single read would have shown.) Repeat the pre-flight for any new condition the chosen approach introduces in Phases 3–4.
 
 Note the operating system. On Windows, Claude Code runs commands through Git Bash, and the recheck uses the same Git Bash, so proofs are written for bash on every OS.
@@ -58,9 +58,17 @@ Ask **one question at a time**, each with your recommended answer and a one-line
    - Aim for 3–8 criteria. Fewer than 3 catches little; above 8 the executor tends to drop one. Above 8 criteria or ~40 turns, propose splitting into two goals.
 2. **Scope (provisional)** — Which files or folders may change? What is explicitly out? The design in Phase 4 may narrow it; it may widen it only with the user's yes.
 3. **Invariants** — What must not break or change (other tests, public API, schema, source documents, raw data, configuration)? Each becomes an `invariant` proof or a pinned path when a command or hash can show it.
-4. **External effects** — Does the task touch external systems, credentials, network, email, production APIs, digital signatures, payments, deploys, `git push`? If so, define a safe mode (dry run, test environment, no push) and what is off limits. /goal runs unattended; treat this as a real risk.
+4. **External effects** — Does the task touch external systems, credentials, network, email, production APIs, digital signatures, payments, deploys, `git push`? If so, define a safe mode (dry run, test environment, no push) and what is off limits. /goal runs unattended; treat this as a real risk. A proof that itself has such an effect (it calls a paid API, reads a production host) is marked `"external": true` in Phase 8, so the attack run never multiplies those calls.
+5. **Implicit cases** — Requests name the happy path and leave out the rest. For each end state, propose in ONE question the cases nobody said, each with your recommendation: the negative case (who or what must NOT be affected), empty input, the error path, repetition (running twice changes nothing more), boundaries (zero, one, the maximum). An accepted case becomes a case inside an existing proof (a verifier case, a test), not a new criterion, so the 3–8 limit holds. A rejected case is recorded as out of scope in the design.
 
-Move to Phase 3 when you can write these four without assumptions of your own.
+**Read-back.** Before Phase 3, show your understanding as a list, one line per item, each with a label:
+- **Confirmed** — the user said it or confirmed it;
+- **Assumed** — your default, not yet confirmed;
+- **Open decision** — something only the user can settle;
+- **Tension** — two answers that contradict each other (name both);
+- **Out of scope** — explicitly excluded.
+
+Ask "Is this right?" and apply corrections. Move to Phase 3 only when no line is Open decision or Tension. Assumed lines may stay; they reappear in the pre-draft summary. A goal is written for an executor who never saw this conversation: the read-back is where a misunderstanding is still cheap.
 
 ## Phase 3 — Approaches (how, options)
 
@@ -128,11 +136,12 @@ Derive the contract from the design first, then ask about what is still open.
    - Documents: outputs match sources one to one; no `TODO`/`[TBD]` markers left; every citation points to an existing location.
    - Data: row count and key set match the source; JSON validates against a schema; a comparison against a reference file reports 0 differences.
    If no textual proof is possible at all (subjective quality: style, tone, "reads well"), say plainly that the task is not a good /goal candidate and propose splitting it or using a normal prompt. See example 4 in `references/examples.md`.
+   The same holds for a single criterion: **a criterion that cannot be checked is badly written**. Rewrite it into something a command can show, move it to the human sample (question 8), or take it out of the goal. Never keep it as a criterion the evaluator would judge on the executor's word.
    - **a. Kind** — Mark each proof `target` (false now, must become true) or `invariant` (true now, must stay true). A target that is already true measures nothing; the baseline in Phase 8 rejects it.
    - **b. Direct proof** — At least one target exercises the new behavior directly (a named test, a check on the specific output), not only a broad proxy like "the whole suite passes".
    - **c. Verifier script** — If no ready-made command exists, offer to write a small verifier now, for the user to review before the /goal starts. It prints a clear PASS/FAIL line and the counts behind it. Written now, not during the run, because an executor that writes its own checker grades its own homework.
    - **d. Fast check** — If the full proofs are slow (a long suite, a full rebuild, a large dataset), agree on a cheap representative check for the executor to run while iterating (one test file, one sample document, a 1% sample). Full proofs are still required before declaring completion. The design's steps already carry one each; confirm them here.
-   - **e. Named break** — Every `target` proof carries the break it catches, from design section (e): the wrong implementation or shortcut that would make it fail. The baseline only proves a target fails *before* the work; the named break says it would also fail on *wrong* work. A target with no nameable break is vacuous in spirit even when it fails at baseline: tighten it or drop it. Mentally mutate the change (wrong constant, wrong branch, empty return, missing validation, missing side effect) and check that some proof fails for each mutation that matters.
+   - **e. Named break** — Every `target` proof carries the break it catches, from design section (e): the wrong implementation or shortcut that would make it fail. The baseline only proves a target fails *before* the work; the named break says it would also fail on *wrong* work. A target with no nameable break is vacuous in spirit even when it fails at baseline: tighten it or drop it. The cheap breaks (a constant, an empty return, a deleted or weakened test, a swallowed error, an edited input file) are not left to imagination: the red-team writes them as attack scripts in Phase 7 and Phase 8 runs them. Breaks that would take a near-complete wrong implementation stay a mental check; say which.
 2. **Counters** — Which numbers could the executor shrink to fake success: tests, records, chapters, rows, files? Each becomes a counter with rule `no_decrease` (or `no_increase` for warnings or pending items).
 3. **Forbidden shortcuts** — Which shortcuts would invalidate the result? Start from the traps in `references/traps.md` for this project type, then add task-specific ones. Always: modifying anything in `.claude/goals/` except the checklist (the design file included).
 4. **Blocked** — When should the executor stop instead of pushing on? Each situation must be mechanically detectable: a forbidden file appears in the diff, a command needs a credential missing from `.env`, a source file fails to parse, a new dependency would be required, the work needs an approach the design rejected. "If unclear" or "if in doubt" is not a condition. Always include the generic one: a needed change falls outside SCOPE or against a CONSTRAINT.
@@ -192,6 +201,8 @@ Why each piece exists (use this to decide what to cut or keep):
 - **Turn counter**: the limit only works because the executor reports the number and the evaluator reads it.
 - **Forbidden shortcuts and counters**: the executor optimizes toward the condition; without them, deleting the failing test or emptying the failing record "satisfies" it. The prose rule tells the evaluator; the counter catches it mechanically.
 - **Named breaks and checks over prose**: a prose prohibition tells the executor what not to do but does not stop it; only a proof, counter, pin or verifier case does. A retrospective of real goals found 4 of 28 red-team fixes were prose only, and none of 31 attacks fully blocked by first drafts. So each target proof names the wrong work it fails on, and a fix counts as a check only when something fails mechanically. (From obra/superpowers: "name the break" and "match the form to the failure".)
+- **Executed attacks**: a fix labelled "check" by its author can still let the attack through, and nobody finds out until a real run. Running each cheap attack against the proofs turns the label into a measurement. The control run, and the UNREACHED and NO-APPLY verdicts, exist because a proof that fails for the wrong reason (a missing `.env`, a verifier that cannot import) would otherwise "catch" every attack: in the first test of this mode, a broken verifier did exactly that. (Idea from mutation testing and the Spec Drift Detector's list of cheats.)
+- **Implicit cases and read-back**: no proof captures an intent nobody stated. Asking for the negative, empty, error, repeated and boundary cases, and reading the understanding back with each item labelled, is where a misunderstanding costs one message instead of a run. (From GroundWork and the Spec Drift Detector.)
 - **Baseline and recheck** (Phases 8–9): the baseline proves each target can fail, so passing later means something; the recheck re-runs everything outside the executor.
 
 Drafting rules:
@@ -221,15 +232,23 @@ Also: which wrong implementation passes that none of the named breaks covers?
 Also: can the executor follow the design step by step and pass every proof while
 still missing the objective? Is any design step or component left with no proof?
 Name any part of the objective that no proof checks. Be concrete; no general advice.
+Then write each attack that fits in a short bash script (up to ~30 changed lines) as
+<attacks-dir>/NN-<name>.sh, run from the project root in a throwaway copy. Start it with
+  # attacks: <criterion of the target proof it tries to make pass>
+  # break: <one line: what it does>
+The script must change files (sed, a heredoc, rm, or git apply of an inline patch); it must
+not touch anything outside the project, call the network, or run the proofs. At most 8
+scripts, cheapest first; one per named break that is cheap to fake. Do not write the
+fix, only the attack.
 ```
 
-If subagents are unavailable, do the same analysis yourself and tell the user it is a self-review, which is weaker.
+Fill `<attacks-dir>` with `.claude/goals/<slug>-attacks`. If subagents are unavailable, do the same analysis yourself and tell the user it is a self-review, which is weaker; write the attack scripts anyway. Show the user the scripts before Phase 8 runs them: they are code written by a model, run under the user's permissions like the proofs.
 
 Show the user each unblocked attack with your proposed fix: a narrower proof, a new counter, an added prohibition, a pinned path, an extra invariant, a new verifier case, or a change to the design. Apply the ones they accept (a design change is shown as the edited section, confirmed like in Phase 4) and re-check the draft length.
 
-**Match the form to the failure.** Label each accepted fix **check** (a proof, counter, pin or verifier case that fails mechanically on the attack) or **prose** (a written prohibition the evaluator is asked to enforce). Prefer a check; use prose only when no check is possible, and then say so: prose fixes are listed as "weak closes" in the design notes at delivery, so the user knows which attacks rest on the evaluator's reading alone.
+**Match the form to the failure.** Prefer a fix that is a **check** (a proof, counter, pin or verifier case that fails mechanically on the attack) over **prose** (a written prohibition the evaluator is asked to enforce); use prose only when no check is possible. Whether a fix really is a check is not decided by its author: Phase 8 runs the attack scripts against the proofs. An attack that still ends HOLE after the fixes is a **weak close**: it is listed in the design notes at delivery with the script name, so the user knows which attacks rest on the evaluator's reading alone. Attacks too big for a script stay judged by reading, and are listed as "not executed".
 
-## Phase 8 — Files and baseline
+## Phase 8 — Files, baseline and attacks
 
 Do this with the project in its starting state, before any work toward the goal.
 
@@ -239,7 +258,9 @@ Do this with the project in its starting state, before any work toward the goal.
    {"goal": "<slug>",
     "proofs": [{"criterion": "1", "kind": "target", "command": "{python} -m pytest tests/test_x.py::test_new -q",
                 "catches": "<the wrong implementation or shortcut this proof fails on>"},
-               {"criterion": "2", "kind": "invariant", "command": "{python} -m pytest -q"}],
+               {"criterion": "2", "kind": "invariant", "command": "{python} -m pytest -q"},
+               {"criterion": "3", "kind": "target", "command": "{python} scripts/smoke_api.py", "external": true}],
+    "attack_copy": [".env"],
     "counters": [{"name": "tests", "command": "{python} -m pytest --collect-only -q",
                   "regex": "(\\d+) tests? collected", "rule": "no_decrease"}],
     "pinned": [{"path": ".claude/goals/<slug>-design.md", "sha256": "<hash>"},
@@ -247,16 +268,25 @@ Do this with the project in its starting state, before any work toward the goal.
                {"path": "sources/", "sha256": "<hash>"}],
     "sample": {"glob": "out/**/*.md", "n": 5, "lines": 20}}
    ```
-   Rules: one entry per proof in the mandate, same command; write `{python}` wherever the command calls Python; commands run in bash from the project root; success defaults to exit 0, add `expect_regex` when success is a printed line; give every `target` a `catches` line copied from design section (e) (the recheck ignores it; it records what the proof was meant to fail on, and `validate_goal.py` warns when it is missing); always pin the design file (or the spec that replaced it); pin a whole directory to prove that sources or raw data stayed untouched (`validate_goal.py --hash <dir>`); omit `counters`, `sample` or the other pins when not agreed.
+   Rules: one entry per proof in the mandate, same command; write `{python}` wherever the command calls Python; commands run in bash from the project root; success defaults to exit 0, add `expect_regex` when success is a printed line; give every `target` a `catches` line copied from design section (e) (the recheck ignores it; it records what the proof was meant to fail on, and `validate_goal.py` warns when it is missing); always pin the design file (or the spec that replaced it); pin a whole directory to prove that sources or raw data stayed untouched (`validate_goal.py --hash <dir>`); mark `"external": true` on every proof with an external or paid effect (Phase 2, question 4); list in `attack_copy` the gitignored inputs the proofs need (`.env`, a test database), because the attack run starts from a clean git worktree without them; omit `counters`, `sample`, `attack_copy` or the other pins when not agreed or not needed.
 3. Run the baseline:
    `python <skill-dir>/scripts/recheck_goal.py .claude/goals/<slug>-proofs.json --baseline`
    It must end in `BASELINE OK`. Otherwise:
    - `BROKEN`: the command does not exist, crashes or prints no counter value. Fix the command, never the expectation to fit a broken command.
    - `VACUOUS`: a target already passes. Make it stricter so it actually fails now. Reclassify it as `invariant` only if the user confirms it describes something that must merely stay true, and say so explicitly: reclassifying to silence the check is the same shortcut the executor is forbidden to take.
    - `INVALID`: an invariant fails now. Either it is not an invariant (make it a target) or the project is already broken (tell the user before going further).
-   Rerun until `BASELINE OK`. The run records counter values into the proofs file and prints the file's SHA-256.
-4. Put each recorded counter value into the mandate's CONSTRAINTS (e.g. "test count must stay >= 142").
-5. Validate the mandate:
+   Rerun until `BASELINE OK`. The run records counter values and each proof's exit code into the proofs file and prints the file's SHA-256.
+4. Run the attacks from Phase 7:
+   `python <skill-dir>/scripts/recheck_goal.py .claude/goals/<slug>-proofs.json --attacks .claude/goals/<slug>-attacks`
+   Each script runs in a throwaway git worktree outside the project (the project is never touched; git only registers the worktree in `.git/worktrees` while it runs, and the script removes it), after a control that the clean worktree reproduces the baseline. Per attack:
+   - `CAUGHT`: an attacked target still fails, or a pin, counter or invariant fails. The fix holds.
+   - `HOLE`: the attacked target passes and nothing fails. Go back to Phase 7 with this attack and add a check (narrower proof, counter, pin, verifier case), then rerun the baseline and the attacks. If no check is possible, it stays a weak close for delivery.
+   - `UNREACHED`: the target fails with exactly its pre-attack output. Either the attack missed what the proof checks (rewrite the attack), or the proof cannot pass at all, or it prints nothing that changes (make it print what it checks).
+   - `NO-APPLY`: the script failed or changed nothing. Rewrite it.
+   - `SKIPPED`: the attacked target is external, so it is never run here; list it as not executed.
+   `BROKEN` before any attack means the worktree does not reproduce the baseline: usually a gitignored input missing from `attack_copy`, or uncommitted tracked changes (commit or stash them; Phase 1, item 3). Without git there is no attack run: say so, and the Phase 7 review stays prose. Aim for `ATTACKS OK`; deliver with a HOLE only as a declared weak close.
+5. Put each recorded counter value into the mandate's CONSTRAINTS (e.g. "test count must stay >= 142").
+6. Validate the mandate:
    `python <skill-dir>/scripts/validate_goal.py .claude/goals/<slug>.md`
    Fix every ERROR. Address each WARNING or tell the user why it does not apply.
 
@@ -265,7 +295,7 @@ Do this with the project in its starting state, before any work toward the goal.
 Give the user:
 
 1. The full mandate in a code block and the character count reported by the validator.
-2. The path of the design file, and design notes: at most 5 short lines on the non-obvious choices (why this approach over the rejected ones, why a proof is a target, which trap a prohibition blocks, why this counter, why this turn limit). No tutorial. Then list the **weak closes** from Phase 7, one line each (the attack, and why no check was possible), or "none".
+2. The path of the design file, and design notes: at most 5 short lines on the non-obvious choices (why this approach over the rejected ones, why a proof is a target, which trap a prohibition blocks, why this counter, why this turn limit). No tutorial. Then the attack result in one line (e.g. "attacks: 5/6 caught, 1 skipped as external") and the **weak closes**, one line each: every attack that ended HOLE (script name, and why no check was possible) and every attack judged only by reading (not executed), or "none".
 3. Usage: type `/goal ` and paste the text. One line: unattended runs need auto mode, `/goal` with no argument shows status, `/goal clear` cancels.
    **Say in which directory the session must be**, and say it next to the paste instruction, not only in the setup steps above it: `/goal` inherits the cwd of the session where it is pasted, NOT any path named inside the mandate. On 2026-09-25 a mandate written for a worktree was pasted in the session that had just prepared it, the first-action guard fired correctly, and the run ended on the three-strike exit having done nothing.
 4. The recheck command, with the resolved path and the hash printed by the baseline, to run in their own terminal from the project root after the goal reports achieved:

@@ -164,6 +164,23 @@ def validate(path: str) -> int:
             for c in (ps.get("baseline") or {}).get("counters", {}).values():
                 if not re.search(rf"(>=|<=|≥|≤)\s*{c}\b", text):
                     warnings.append(f"baseline counter value {c} does not appear in the mandate constraints")
+            goal = ps.get("goal") or os.path.basename(re.sub(r"\.md$", "", path))
+            runs = []
+            log = os.path.join(os.path.dirname(os.path.abspath(path)), "recheck-log.jsonl")
+            if os.path.exists(log):
+                for line in open(log, encoding="utf-8", errors="replace"):
+                    try:
+                        r = json.loads(line)
+                    except ValueError:
+                        continue
+                    if r.get("goal") == goal and r.get("mode") == "attacks":
+                        runs.append(r)
+            if not runs:
+                warnings.append("red-team attacks were never executed: the fixes rest on the author's word "
+                                "(run recheck_goal.py --attacks, or say why not: no git, all proofs external)")
+            elif runs[-1].get("verdict") != "ATTACKS OK":
+                warnings.append(f"last attacks run ended {runs[-1].get('verdict')}: a proof can still be fooled "
+                                "or an attack proved nothing; list it as a weak close or fix it")
         except (OSError, ValueError) as e:
             errors.append(f"proofs file unreadable: {e}")
     if not any_in(t, [".CLAUDE/GOALS/"]) or not re.search(r"(FORBIDDEN|PROIBIDO)[^\n]*\.CLAUDE/GOALS", t):

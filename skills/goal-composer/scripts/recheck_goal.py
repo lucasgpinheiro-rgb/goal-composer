@@ -4,6 +4,8 @@
 Usage:
   recheck_goal.py <slug>-proofs.json --baseline      before the /goal: prove the proofs are not vacuous
   recheck_goal.py <slug>-proofs.json [--expect-sha H] after the /goal: re-run everything, verdict DONE/NOT-DONE
+  recheck_goal.py <slug>-proofs.json --attacks DIR    after the baseline: run each red-team attack script
+                                                      in a throwaway git worktree, verdict CAUGHT/HOLE per attack
 
 Why: the /goal evaluator only reads the transcript and never runs anything, so it
 cannot tell a fresh output from a stale, partial or cherry-picked one. And a proof
@@ -36,6 +38,11 @@ Fields per proof or counter:
   expect_regex  searched in stdout+stderr (multiline)
   timeout       seconds, default 600
   catches       (targets) the wrong implementation or shortcut the proof fails on; recorded, not run
+  external      true when the command has an external or paid effect (API, production host); --attacks
+                never runs it, so N attacks never multiply those calls
+Top level, for --attacks only:
+  attack_copy   list of paths or globs, relative to the project root, of gitignored inputs the proofs
+                need (.env, a test database). A git worktree starts without them; they are copied in.
 Counters: value = first capture group of "regex", or the first integer in the output.
   rule no_decrease (final >= baseline) | no_increase (final <= baseline). Baseline values are stored in the file.
 Pinned: a file or a whole directory (hash of sorted relative paths + file hashes; skips .git,
@@ -49,8 +56,28 @@ the project root or in src/ (tests.test_retry, billing.retry) is an ordinary fai
 looks before the work is done. A unittest run that reports "Ran 0 tests" never passes, since Python before
 3.12 exits 0 there while pytest and later versions exit 5.
 
-Exit codes: 0 DONE / BASELINE OK, 1 NOT-DONE / BASELINE INVALID, 2 BROKEN (spec or environment problem).
-Run from the project root.
+Attacks (--attacks DIR): each *.sh in DIR is one cheap way to fake the work (a stub returning a
+constant, a deleted test, a swallowed error), written by the red-team before the /goal. Header lines:
+  # attacks: <criterion>[, <criterion>]     the target proof(s) the attack tries to make pass
+  # break: <what the attack does>
+The project is never touched. A temporary git worktree at HEAD (outside the project) gets a copy of the
+spec's folder and of attack_copy. Control first: in that clean worktree every proof must exit with the
+code the baseline recorded and every counter must equal its baseline value; otherwise the worktree does
+not reproduce the project and every attack would look caught, so the run is BROKEN. Then, per attack:
+reset the worktree, run the script with bash from the project root inside it, and judge
+  NO-APPLY  the script failed, or changed no file (a no-op attack proves nothing)
+  UNREACHED an attacked target fails with exactly its pre-attack output: the attack never reached
+            what the proof checks, or the proof cannot pass at all (a verifier that fails to import)
+  CAUGHT    an attacked target still fails, or it passes but a pin, counter or invariant fails
+  HOLE      the attacked target passes and no guard fails: the proof can be fooled
+  SKIPPED   an attacked target is external
+Verdict ATTACKS OK (every attack CAUGHT or SKIPPED), ATTACKS HOLE (any HOLE), ATTACKS UNPROVEN
+(any NO-APPLY or UNREACHED), BROKEN.
+Needs a git repository whose tracked files are unchanged outside the spec's folder, and a --baseline
+taken with this version (it records each proof's exit code). Attack scripts are code: read them first.
+
+Exit codes: 0 DONE / BASELINE OK / ATTACKS OK, 1 NOT-DONE / BASELINE INVALID / ATTACKS HOLE or UNPROVEN,
+2 BROKEN (spec or environment problem). Run from the project root.
 
 Run log: every run appends one JSON line to recheck-log.jsonl next to the spec (goal, mode,
 verdict, passed/total, counter values, proofs file SHA-256, expect_sha_ok, exit code, UTC time),
@@ -70,6 +97,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 
 IS_WIN = os.name == "nt"
 NOT_FOUND_CODES = {126, 127, 9009}
@@ -282,9 +310,12 @@ def main():
     ap.add_argument("--expect-sha", help="SHA-256 of the proofs file as delivered")
     ap.add_argument("--seed", type=int, help="seed for the sample (default: random)")
     ap.add_argument("--no-log", action="store_true", help=f"do not append this run to {LOG_NAME} next to the spec")
+    ap.add_argument("--attacks", metavar="DIR", help="run the red-team attack scripts in DIR (after --baseline)")
     a = ap.parse_args()
+    if a.attacks and a.baseline:
+        ap.error("--attacks runs after the baseline, not together with it")
     rec = {"goal": re.sub(r"-proofs\.json$", "", os.path.basename(a.spec)), "spec": a.spec,
-           "mode": "baseline" if a.baseline else "recheck", "expect_sha_ok": None,
+           "mode": "attacks" if a.attacks else "baseline" if a.baseline else "recheck", "expect_sha_ok": None,
            "verdict": None, "passed": None, "total": None, "counters": {}, "exit": None}
     code = run(a, rec)
     rec["exit"] = code
@@ -316,9 +347,12 @@ def run(a, rec):
         return 2
 
     bash = find_bash()
+    if a.attacks:
+        return run_attacks(a, rec, spec, bash)
     mode = "BASELINE" if a.baseline else "RECHECK"
     print(f"{mode} | bash: {bash or 'not found'} | python: {sys.executable}\n")
     fails, broken, total = 0, 0, 0
+    rcs = []  # exit code per proof, recorded at baseline for the --attacks control
 
     for pin in spec.get("pinned", []):
         total += 1
@@ -351,6 +385,7 @@ def run(a, rec):
             show_tail(res["out"])
             broken += 1
             continue
+        rcs.append(None if res["timeout"] else res["rc"])
         ok, problems = passes(p, res)
         if a.baseline and kind == "target":
             if ok:
@@ -414,7 +449,7 @@ def run(a, rec):
             rec["verdict"] = "BASELINE INVALID"
             return 1
         spec["baseline"] = {"taken_at": datetime.datetime.now().isoformat(timespec="seconds"),
-                            "counters": measured}
+                            "counters": measured, "proof_rc": rcs}
         with open(a.spec, "w", encoding="utf-8") as f:
             json.dump(spec, f, indent=2, ensure_ascii=False)
             f.write("\n")
@@ -427,6 +462,288 @@ def run(a, rec):
     print(f"\nVERDICT: {verdict} ({passed}/{total} checks passed)")
     print_sample(spec, a.seed if a.seed is not None else random.randrange(10**6))
     return 0 if fails == 0 else 1
+
+
+# ---------------------------------------------------------------- attacks
+
+GLOB_CHARS = re.compile(r"([*?\[\]\\!#])")
+
+
+def git(args, cwd):
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
+
+
+def fingerprint(root):
+    """(size, mtime_ns) of every file under root except .git: enough to tell whether anything changed."""
+    fp = {}
+    for r, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for f in files:
+            if f == ".git":
+                continue
+            full = os.path.join(r, f)
+            try:
+                st = os.stat(full)
+            except OSError:
+                continue
+            fp[os.path.relpath(full, root)] = (st.st_size, st.st_mtime_ns)
+    return fp
+
+
+def stat_fp(path):
+    if os.path.isdir(path):
+        return fingerprint(path)
+    try:
+        st = os.stat(path)
+        return (st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+
+
+def attack_header(path):
+    targets, brk = None, ""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            m = re.match(r"\s*#\s*attacks:\s*(.+)", line, re.I)
+            if m:
+                targets = [t.strip() for t in m.group(1).split(",") if t.strip()]
+            m = re.match(r"\s*#\s*break:\s*(.+)", line, re.I)
+            if m:
+                brk = m.group(1).strip()
+    return targets, brk
+
+
+def proof_state(p, bash):
+    """'pass' | 'fail' | 'broken' | 'timeout', with a short reason."""
+    res = execute(p, bash)
+    if res["broken"]:
+        return "broken", res["broken"], res
+    if res["timeout"]:
+        return "timeout", "timeout", res
+    ok, problems = passes(p, res)
+    return ("pass", "", res) if ok else ("fail", "; ".join(problems), res)
+
+
+def broken_attacks(rec, msg):
+    print(f"ATTACKS BROKEN  {msg}\n\nVERDICT: BROKEN")
+    rec["verdict"] = "BROKEN"
+    return 2
+
+
+def run_attacks(a, rec, spec, bash):
+    proj = os.getcwd()
+    spec_abs = os.path.abspath(a.spec)
+    attacks_dir = os.path.abspath(a.attacks)
+    print(f"ATTACKS | bash: {bash or 'not found'} | python: {sys.executable}\n")
+    if not bash:
+        return broken_attacks(rec, "bash not found (Windows: install Git for Windows or set CLAUDE_CODE_GIT_BASH_PATH)")
+    if not shutil.which("git"):
+        return broken_attacks(rec, "git not found")
+    scripts = sorted(glob.glob(os.path.join(attacks_dir, "*.sh")))
+    if not scripts:
+        return broken_attacks(rec, f"no *.sh attack scripts in {a.attacks}")
+
+    r = git(["rev-parse", "--show-toplevel"], proj)
+    if r.returncode != 0:
+        return broken_attacks(rec, "attacks need a git repository (fall back to the prose red-team and say so)")
+    top = os.path.normpath(r.stdout.strip())
+    prefix = git(["rev-parse", "--show-prefix"], proj).stdout.strip()  # project root inside the repo, "" or "sub/"
+    goals_rel = os.path.relpath(os.path.dirname(spec_abs), proj).replace(os.sep, "/")
+    if goals_rel.startswith(".."):
+        return broken_attacks(rec, "the proofs file must be inside the project")
+
+    st = git(["status", "--porcelain", "--untracked-files=no"], proj)
+    dirty = [ln[3:] for ln in st.stdout.splitlines()
+             if ln[3:] and not ln[3:].strip('"').startswith(f"{prefix}{goals_rel}/")]
+    if dirty:
+        return broken_attacks(rec, "tracked files changed since HEAD, so a worktree at HEAD is not the starting "
+                                   f"state the baseline measured; commit or stash first: {', '.join(dirty[:5])}")
+
+    proofs = spec["proofs"]
+    base = spec.get("baseline") or {}
+    base_rc, base_counters = base.get("proof_rc"), base.get("counters", {})
+    if not isinstance(base_rc, list) or len(base_rc) != len(proofs):
+        return broken_attacks(rec, "no per-proof exit codes in the baseline; rerun --baseline with this version")
+    known = {str(p.get("criterion")) for p in proofs if p.get("kind", "target") == "target"}
+
+    copies = []
+    for pat in spec.get("attack_copy", []):
+        hits = [os.path.relpath(h, proj).replace(os.sep, "/") for h in glob.glob(os.path.join(proj, pat), recursive=True)]
+        if not hits:
+            return broken_attacks(rec, f"attack_copy entry '{pat}' matches nothing in the project")
+        copies += hits
+
+    tmp = os.path.realpath(tempfile.mkdtemp(prefix="goal-attacks-"))
+    wt = os.path.join(tmp, "wt")
+    wproj = os.path.normpath(os.path.join(wt, prefix))
+    verdicts, results = {}, []
+    try:
+        r = git(["worktree", "add", "--detach", "-q", wt, "HEAD"], top)
+        if r.returncode != 0:
+            return broken_attacks(rec, f"git worktree add failed: {r.stderr.strip()[:300]}")
+        excludes = [f"/{prefix}{p}" for p in [goals_rel, *copies]]
+        copy_fp = {}
+
+        def install_inputs(force):
+            dst = os.path.join(wproj, goals_rel)
+            shutil.rmtree(dst, ignore_errors=True)
+            shutil.copytree(os.path.dirname(spec_abs), dst)
+            for c in copies:
+                src, d = os.path.join(proj, c), os.path.join(wproj, c)
+                if not force and stat_fp(d) == copy_fp.get(c):
+                    continue  # unchanged since copied: skip re-copying a large input
+                if os.path.isdir(src):
+                    shutil.rmtree(d, ignore_errors=True)
+                    shutil.copytree(src, d)
+                else:
+                    os.makedirs(os.path.dirname(d), exist_ok=True)
+                    shutil.copy2(src, d)
+                copy_fp[c] = stat_fp(d)
+
+        def reset():
+            # only ever inside the throwaway worktree
+            assert os.path.realpath(wt).startswith(tmp) and os.path.normcase(os.path.realpath(wt)) != os.path.normcase(os.path.realpath(top))
+            os.chdir(tmp)
+            git(["reset", "--hard", "-q", "HEAD"], wt)
+            git(["clean", "-fdxq", *[x for e in excludes for x in ("-e", GLOB_CHARS.sub(r"\\\1", e))]], wt)
+            install_inputs(force=False)
+            os.chdir(wproj)
+
+        install_inputs(force=True)
+        os.chdir(wproj)
+
+        # Control: the clean worktree must reproduce the baseline, or every attack would look caught.
+        mismatch, ctl_out = [], {}
+        for i, p in enumerate(proofs):
+            if p.get("external"):
+                continue
+            state, why, res = proof_state(p, bash)
+            ctl_out[i] = res["out"]
+            got = None if state in ("broken", "timeout") else res["rc"]
+            if got != base_rc[i]:
+                mismatch.append(f"[{p.get('criterion', '?')}] {label(p)}: exit {got if got is not None else why}, baseline {base_rc[i]}")
+        for c in spec.get("counters", []):
+            if c.get("external"):
+                continue
+            val = counter_value(c, execute(c, bash))
+            if val != base_counters.get(c.get("name")):
+                mismatch.append(f"counter {c.get('name')} = {val}, baseline {base_counters.get(c.get('name'))}")
+        for pin in spec.get("pinned", []):
+            try:
+                ok = hash_path(pin["path"]).lower() == str(pin.get("sha256", "")).lower()
+            except (FileNotFoundError, KeyError):
+                ok = False
+            if not ok:
+                mismatch.append(f"pin {pin.get('path')} differs or is missing in the worktree")
+        if mismatch:
+            for m in mismatch:
+                print(f"CONTROL FAIL    {m}")
+            return broken_attacks(rec, "the clean worktree does not reproduce the baseline (a gitignored input "
+                                       "missing from attack_copy?), so attacks cannot be judged")
+        print("CONTROL OK      the clean worktree reproduces the baseline\n")
+
+        for s in scripts:
+            name = os.path.basename(s)
+            reset()
+            targets, brk = attack_header(s)
+            if not targets or not set(targets) <= known:
+                v, why = "BROKEN", f"header must name target criteria with '# attacks: <criterion>' (targets: {', '.join(sorted(known))})"
+            else:
+                attacked = [p for p in proofs if p.get("kind", "target") == "target" and str(p.get("criterion")) in targets]
+                before = fingerprint(wt)
+                try:
+                    ar = subprocess.run([bash, s.replace("\\", "/")], cwd=wproj, capture_output=True, text=True,
+                                        encoding="utf-8", errors="replace", timeout=300)
+                except subprocess.TimeoutExpired:
+                    ar = subprocess.CompletedProcess([], 124, "", "timed out after 300 s")
+                if ar.returncode != 0:
+                    tail = " | ".join((ar.stdout + ar.stderr).strip().splitlines()[-3:])
+                    v, why = "NO-APPLY", f"the script exited {ar.returncode}" + (f": {tail}" if tail else "")
+                elif fingerprint(wt) == before:
+                    v, why = "NO-APPLY", "the script changed no file, so it proves nothing"
+                elif any(p.get("external") for p in attacked):
+                    v, why = "SKIPPED", "an attacked target is external"
+                else:
+                    v, why = None, ""
+                    for p in attacked:
+                        state, reason, res = proof_state(p, bash)
+                        if state != "pass":
+                            if res["out"] == ctl_out.get(proofs.index(p)):
+                                # Same output as before the attack: the proof never saw the change, or it
+                                # cannot pass at all (e.g. a verifier that fails to import). Not a catch.
+                                v, why = "UNREACHED", (f"[{p.get('criterion')}] fails with exactly the output it had "
+                                                       "before the attack: the attack never reached what the proof "
+                                                       "checks, the proof cannot pass at all, or it prints "
+                                                       "nothing that changes (make it print what it checks)")
+                            else:
+                                v, why = "CAUGHT", f"[{p.get('criterion')}] still fails ({reason or state})"
+                            break
+                    if v is None:
+                        why = f"[{', '.join(targets)}] passes, "
+                        for pin in spec.get("pinned", []):
+                            try:
+                                ok = hash_path(pin["path"]).lower() == str(pin.get("sha256", "")).lower()
+                            except (FileNotFoundError, KeyError):
+                                ok = False
+                            if not ok:
+                                v, why = "CAUGHT", why + f"but pin {pin.get('path')} changed"
+                                break
+                    if v is None:
+                        for c in spec.get("counters", []):
+                            if c.get("external"):
+                                continue
+                            val, b = counter_value(c, execute(c, bash)), base_counters.get(c.get("name"))
+                            rule = c.get("rule", "no_decrease")
+                            if val is None or not (val >= b if rule == "no_decrease" else val <= b):
+                                v, why = "CAUGHT", why + f"but counter {c.get('name')} = {val} (baseline {b}, {rule})"
+                                break
+                    if v is None:
+                        for p in proofs:
+                            if p.get("kind") == "invariant" and not p.get("external"):
+                                state, reason, _ = proof_state(p, bash)
+                                if state != "pass":
+                                    v, why = "CAUGHT", why + f"but invariant [{p.get('criterion')}] fails ({reason or state})"
+                                    break
+                    if v is None:
+                        skipped = [f"[{p.get('criterion')}]" for p in proofs
+                                   if p.get("external") and p.get("kind") == "invariant"]
+                        skipped += [f"counter {c.get('name')}" for c in spec.get("counters", []) if c.get("external")]
+                        v, why = "HOLE", why + "and no pin, counter or invariant fails" + (
+                            f" (external guards not run: {', '.join(skipped)})" if skipped else "")
+            verdicts[name] = v
+            results.append((name, v, why, brk))
+            print(f"ATTACK  {v:<8} {name}: {why}" + (f"\n        break: {brk}" if brk else ""))
+    except SpecError as e:
+        return broken_attacks(rec, f"a proof or counter is malformed: {e}")
+    finally:
+        os.chdir(proj)
+        git(["worktree", "remove", "--force", wt], top)
+        shutil.rmtree(tmp, ignore_errors=True)
+        git(["worktree", "prune"], top)
+
+    rec["attacks"] = verdicts
+    n = len(results)
+    caught = sum(1 for _, v, _, _ in results if v == "CAUGHT")
+    skipped = sum(1 for _, v, _, _ in results if v == "SKIPPED")
+    rec["passed"], rec["total"] = caught, n
+    if any(v == "BROKEN" for v in verdicts.values()):
+        print("\nVERDICT: BROKEN (an attack script is malformed; fix it, not the proofs)")
+        rec["verdict"] = "BROKEN"
+        return 2
+    holes = [k for k, v in verdicts.items() if v == "HOLE"]
+    if holes:
+        print(f"\nVERDICT: ATTACKS HOLE ({caught}/{n} caught; holes: {', '.join(holes)})")
+        rec["verdict"] = "ATTACKS HOLE"
+        return 1
+    if any(v in ("NO-APPLY", "UNREACHED") for v in verdicts.values()):
+        print(f"\nVERDICT: ATTACKS UNPROVEN ({caught}/{n} caught; rewrite each NO-APPLY attack until it changes "
+              "the code, and check each UNREACHED proof can pass at all)")
+        rec["verdict"] = "ATTACKS UNPROVEN"
+        return 1
+    print(f"\nVERDICT: ATTACKS OK ({caught}/{n} caught" + (f", {skipped} skipped as external" if skipped else "") + ")")
+    rec["verdict"] = "ATTACKS OK"
+    return 0
 
 
 if __name__ == "__main__":

@@ -18,6 +18,9 @@ Four complete runs, condensed. Use them to calibrate: how much to ask, how far A
 
 **Questions asked** (everything else was settled by the request or given a default):
 1. "Should 429 (rate limited) also retry? Recommended: yes, it is transient like 5xx." → yes.
+2. Implicit cases, in one question: "After the 3rd failure, re-raise the original exception unchanged? Recommended: yes, as a test case. Other 4xx: no retry (that is criterion 2). Two calls in a row share no retry state? Recommended: no test, nothing is shared." → as recommended.
+
+**Read-back** (before Approaches): Confirmed: 3 attempts; timeouts, 5xx and 429 retry; other 4xx do not; the 3rd failure re-raises. Assumed: delays 0.5s/1s/2s; tests mock the transport and never sleep. Out of scope: other callers of the transport. No open decision, no tension. → "Right."
 
 **Approaches** (Phase 3, one message, recommended first):
 - A. Hand-written loop inside `fetch_invoice` (recommended): 20 lines, no dependency, the retry rule sits next to the call it guards. Proofs: a direct test file. About 15 turns.
@@ -33,14 +36,14 @@ Chosen: hand-written loop in fetch_invoice - one call site, no dependency
 Rejected: decorator in billing/retry.py - YAGNI for one call site
 Rejected: tenacity - new dependency
 ## Components
-billing/client.py (fetch_invoice); new tests/billing/test_retry.py
+billing/client.py (fetch_invoice); tests/billing/test_retry.py, written and reviewed before the goal, pinned
 ## Error handling
 after the 3rd failure, re-raise the last exception unchanged
 ## Tests -> criteria
-- test_retries_on_timeout_5xx_429 -> 1 - catches: 2 or 4 attempts instead of 3; 429 not retried; delays not doubling
+- test_retries_on_timeout_5xx_429 -> 1 - catches: 2 or 4 attempts instead of 3; 429 not retried; delays not doubling; the 3rd failure swallowed
 - test_no_retry_on_other_4xx -> 2 - catches: retrying every error, e.g. a bare except around the call
 ## Steps
-1. write both tests (they fail) - fast check: pytest tests/billing/test_retry.py -q
+1. run the pinned tests (they fail) - fast check: pytest tests/billing/test_retry.py -q
 2. add the loop with injectable sleep - fast check: same
 3. mypy and full suite - fast check: python -m mypy billing/
 ```
@@ -61,7 +64,7 @@ DONE WHEN (B) OR (A). Check (B) FIRST; if (B) holds the answer is met, and the c
 3. Full suite passes - proof: `python -m pytest -q -rs`, with the output printed
 4. Types check - proof: `python -m mypy billing/`, with the output printed
 
-SCOPE: may change billing/client.py and create tests/billing/test_retry.py. Do not change other files.
+SCOPE: may change billing/client.py. Do not change other files; tests/billing/test_retry.py was written and reviewed before the goal and is pinned.
 
 CONSTRAINTS: the approach is the one in .claude/goals/invoice-retry-design.md; the order of its steps is guidance. No new dependencies. Tests mock the transport and time.sleep; no real waiting. Test count must stay >= 212. Forbidden: skip or xfail marks; editing existing tests; type: ignore; bare except; modifying any file in .claude/goals/ except the checklist.
 
@@ -86,10 +89,33 @@ Note that "needs an approach the design rejected" is covered here by the more co
   {"criterion": "4", "kind": "invariant", "command": "{python} -m mypy billing/"}],
  "counters": [{"name": "tests", "command": "{python} -m pytest --collect-only -q",
                "regex": "(\\d+) tests? collected", "rule": "no_decrease"}],
- "pinned": [{"path": ".claude/goals/invoice-retry-design.md", "sha256": "<hash>"}]}
+ "pinned": [{"path": ".claude/goals/invoice-retry-design.md", "sha256": "<hash>"},
+            {"path": "tests/billing/test_retry.py", "sha256": "<hash>"}]}
 ```
 
-**Design notes**: criteria 1–2 are targets and fail at baseline because the test file does not exist yet; the test counter blocks "fixing" the suite by deleting tests; the design is pinned so the executor cannot rewrite the approach it is bound to; no fast check beyond the design's steps because the suite runs in seconds; 15 turns because it is one function and one test file.
+**Attacks** (Phase 7 scripts in `.claude/goals/invoice-retry-attacks/`, run in Phase 8):
+```bash
+# 01-trivial-tests.sh
+# attacks: 1, 2
+# break: the executor writes the tests itself, and writes ones that assert nothing
+cat > tests/billing/test_retry.py <<'EOF'
+def test_retries_on_timeout_5xx_429(): assert True
+def test_no_retry_on_other_4xx(): assert True
+EOF
+
+# 02-retry-everything.sh
+# attacks: 2
+# break: a bare except retries every error
+...
+
+# 03-four-attempts.sh
+# attacks: 1
+# break: 4 attempts instead of 3, the rest correct
+...
+```
+First run, when the draft still had the executor write the tests: `ATTACK HOLE 01-trivial-tests.sh: [1, 2] passes, and no pin, counter or invariant fails`. A test file the executor writes is a checker it grades itself with, and the test counter only goes up. Fix (a check, not a prohibition): the two tests were written in Phase 5 as the verifier, reviewed by the user, and pinned; SCOPE no longer lets the executor create them. Second run: `01 CAUGHT ([1, 2] passes, but pin tests/billing/test_retry.py changed)`, `02 CAUGHT ([2] still fails)`, `03 CAUGHT ([1] still fails)`, `ATTACKS OK (3/3 caught)`.
+
+**Design notes**: criteria 1–2 are targets and fail at baseline because fetch_invoice has no retry yet; the tests are pinned because attack 01 showed that tests written by the executor prove nothing; the test counter blocks "fixing" the suite by deleting tests; the design is pinned so the executor cannot rewrite the approach it is bound to; 15 turns because it is one function. Attacks: 3/3 caught. Weak closes: none.
 
 ---
 
@@ -102,6 +128,15 @@ Note that "needs an approach the design rejected" is covered here by the more co
 **Questions asked**:
 1. "O relatório é por procedimento (6 × 24 avaliações) ou por item do checklist? Recomendo por procedimento: é assim que cada responsável vai ler." → por procedimento.
 2. "Não há comando que prove a estrutura do relatório nem as citações. Escrevo agora um verificador para você revisar? Recomendo sim: sem ele, as citações não têm prova." → sim; verificador revisado e aprovado.
+
+**Releitura** (antes das abordagens, uma linha por item):
+- Confirmado: relatório por procedimento, 6 × 24 avaliações.
+- Confirmado: verificador escrito agora, revisado por você.
+- Assumido: citações no formato `arquivo:linha`; status "não verificado" permitido.
+- Tensão: "sem alterar mais nada" × relatório em `auditoria/`, pasta que ainda não existe. Criar a pasta conta como alteração?
+- Fora do escopo: corrigir os procedimentos; aqui só se audita.
+
+→ "Pode criar `auditoria/`, e só o relatório dentro dela." A tensão virou o critério 4 e o ESCOPO; sem decisão em aberto, segue para as abordagens.
 
 **Approaches/Design** (Audit: method only): a single method was offered, since the report shape was already fixed by question 1: ler cada procedimento inteiro e percorrer os 24 itens contra ele, citando `arquivo:linha`; um item conta como "não localizado" depois de buscar os termos do requisito e dois sinônimos, registrados no relatório. Saved as `.claude/goals/auditoria-design.md` (seções Abordagem, Método, Testes -> critérios, Passos).
 
